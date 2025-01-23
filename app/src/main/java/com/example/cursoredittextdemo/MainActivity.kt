@@ -30,29 +30,7 @@ class MainActivity : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-//        binding.main.setOnTouchListener { _, event ->
-//            if (event.action == MotionEvent.ACTION_DOWN) {
-//                currentFocus?.clearFocus()
-//                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-//                imm.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
-//            }
-//            false
-//        }
 
-        // Clear focus and hide keyboard when touching outside the EditText
-//        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-//            override fun handleOnBackPressed() {
-//                if (binding.editText.hasFocus()) {
-//                    // Hide keyboard and cursor
-//                    hideKeyboard(binding.editText)
-//                    binding.editText.clearFocus()
-//                } else {
-//                    // Allow back press to function normally
-//                    finish()
-//                }
-//            }
-//        })
-//    }
         }
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
             currentFocus?.let { focusView ->
@@ -66,11 +44,35 @@ class MainActivity : AppCompatActivity() {
         }
 //
 
+
     }
+//this is autocompletetextvie in this when i type then default soft keypad open but in this when i
+//select numeric pad and write one input then automatically alphabetic pad occor how to solve this
+
+//binding.acToNumber.setOnEditorActionListener(object : TextView.OnEditorActionListener {
+//    override fun onEditorAction(v: TextView?, actionId: Int, event: KeyEvent?): Boolean {
+//        when (actionId) {
+//            EditorInfo.IME_ACTION_DONE -> {
+//                Logger.d(TAG, "onEditorAction DONE")
 //
+//                // Hide the keyboard
+//                val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+//                imm.hideSoftInputFromWindow(binding.acToNumber.windowToken, 0)
 //
-//    private fun hideKeyboard(editText: EditText) {
-//        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-//        imm.hideSoftInputFromWindow(editText.windowToken, 0)
+//                // Update views
+//                binding.acToNumber.visibility = View.GONE
+//                binding.clToNumberView.visibility = View.VISIBLE
+//
+//                // Get and format the destination number
+//                destinationNumber = binding.acToNumber.text.toString()
+//                binding.tvToNumber.text = getFormattedNumber(destinationNumber)
+//
+//                // Reset input type correctly
+//                binding.acToNumber.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_COMPLETE
+//
+//                return true
+//            }
+//        }
+//        return false
 //    }
-//}
+//})
