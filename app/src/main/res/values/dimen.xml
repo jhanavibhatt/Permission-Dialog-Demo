@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<dimen name="spacing_6">6dp</dimen>
+    <dimen name="spacing_8">8dp</dimen>
+    <dimen name="spacing_10">10dp</dimen>
+    <dimen name="spacing_60">60dp</dimen>
+    <dimen name="spacing_40">40dp</dimen>
+    <dimen name="spacing_20">20dp</dimen>
+
+
+    <dimen name="dialpad_text_size">28dp</dimen>
+    <dimen name="small_margin">4dp</dimen>
+    <dimen name="one_dp">1dp</dimen>
+    <dimen name="dialpad_letters_text_size">12dp</dimen>
+    <dimen name="text_sub_title_size_16">16sp</dimen>
+</resources>
