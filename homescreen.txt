@@ -1,0 +1,326 @@
+onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+//        setContentView(R.layout.activity_main)
+//        toolbar = findViewById<View>(R.id.toolbar) as Toolbar
+        //Thread.setDefaultUncaughtExceptionHandler(new MyExceptionHandler(this));
+        setSupportActionBar(findViewById(R.id.toolbar))
+        settitle(resources.getString(R.string.activity))
+        overlay = findViewById(R.id.overlay)
+        Log.e(TAG, "onCreate()  ")
+        val key = intent.extras?.keySet()
+
+        if (savedInstanceState != null){
+            intent.putExtra("from",savedInstanceState.getString("from"))
+            if (AppPrefs.GUID.isEmpty()) {
+                fetchLocalData()
+            }
+        }
+        //   Log.e("Key Home",key?.map { it.toString() }.toString())
+
+        requestListener = RequestListener(this)
+        commonFunction = CommonFunction(this)
+        connection = CheckInternetConnection(this)
+        sp = PreferenceManager.getDefaultSharedPreferences(this)
+
+        AppPrefs.UserCredits = sp?.getString("user_credits", "0") ?: "0"
+        AppPrefs.isSubscribed = sp?.getString("isSubscribed", "0") ?: "0"
+        AppPrefs.isFreeTrialUsed = sp?.getString("isFreeTrialUsed", "0") ?: "0"
+        AppPrefs.purchaseStatus = sp?.getString("purchaseStatus", "") ?: ""
+        RecentListAdapter.isInEditMode = false
+        AppPrefs.isLoginReqSign = false
+
+        supportActionBar?.title = ""
+        supportActionBar?.elevation = 0f
+//        moveToNewDocument = intent.getStringExtra("moveToNewDocument") ?: ""
+
+//        SharedFilePath = intent.getStringExtra("filePath") ?: ""
+//        receiverEmailFromLink = intent.getStringExtra("receiverEmailFromLink") ?: ""
+//        forDownload = intent.getBooleanExtra("forDownload", false)
+        drawer = findViewById<View>(R.id.drawer_layout) as DrawerLayout
+        //        drawer.setDrawerElevation(10);
+        FragmentModel.add(resources.getString(R.string.creditfr))
+        FragmentModel.add(resources.getString(R.string.datefr))
+        FragmentModel.add(resources.getString(R.string.detailfr))
+        FragmentModel.add(resources.getString(R.string.signaturefr))
+        FragmentModel.add(resources.getString(R.string.about))
+
+        imageLoader = PicassoLoader()
+        navigationView = findViewById<View>(R.id.nav_view) as NavigationView
+        myview = findViewById<View>(R.id.main_container) as RelativeLayout
+        if (Constant.manageDetailList == null || Constant.manageDetailList.size <= 0) {
+//            Utils.fillCategory(this)
+        }
+        val mConnectivityReceiver = ConnectivityReceiver(this)
+        registerReceiverNonExported(
+            mConnectivityReceiver,
+            IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION)
+        )
+        registerReceiverNonExported(mEmailVerificationReceiver, IntentFilter().apply {
+            addAction(Constant.INTENT_ACTION_EMAIL_VERIFICATION)
+            addAction(Constant.INTENT_ACTION_RECEIVER_FINISH_PROCESS)
+            addAction(Constant.INTENT_ACTION_PAYWALL_CLICK)
+        })
+        init()
+        /*val fragmentManager = supportFragmentManager
+        fragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        fragmentManager.beginTransaction()
+            .add(R.id.main_container, HomeFragment.newInstance(SharedFilePath, forDownload,receiverEmailFromLink))
+            .addToBackStack(null)
+            .commit()*/
+
+        var backStackJob: Job? = null
+        val backStackDelay = 200L // Adjust delay as needed
+        val activityString = resources.getString(R.string.activity)
+
+        supportFragmentManager.addOnBackStackChangedListener {
+            backStackJob?.cancel() // Cancel any previous pending job
+            backStackJob = CoroutineScope(Dispatchers.Main).launch {
+                delay(backStackDelay) // Wait for a short period of inactivity
+
+                if (supportFragmentManager.backStackEntryCount == 0) {
+                    // ... your code ...
+                } else {
+                    val currentFrag = supportFragmentManager.findFragmentById(R.id.main_container)
+                    if (currentFrag != null) {
+                        val simpleName = currentFrag.javaClass.simpleName
+
+                        if (simpleName == activityString) {
+                            changeActionBar(false)
+                        } else if (FragmentModel.contains(simpleName)) {
+                            changeActionBar(true)
+                        }
+                    }
+                }
+                backStackJob = null // Reset the job
+            }
+        }
+
+        toggle = object : ActionBarDrawerToggle(
+            this,
+            drawer,
+            toolbar,
+            R.string.navigation_drawer_blank,
+            R.string.navigation_drawer_close
+        ) {
+            override fun onDrawerClosed(view: View) {
+                super.onDrawerClosed(view)
+                when (drawerType) {
+                    DrawerType.MyDetails -> {
+                        val fragmentManager2 = supportFragmentManager
+                        fragmentManager2.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager2.beginTransaction()
+                            .replace(R.id.main_container, MyDetailFragment.newInstance())
+                            .addToBackStack(null)
+                            .commit()
+                    }
+
+                    DrawerType.DateFormat -> {
+                        val fragmentManager3 = supportFragmentManager
+                        fragmentManager3.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager3.beginTransaction()
+                            .replace(R.id.main_container, DateFormatFragment.newInstance())
+                            .addToBackStack(null)
+                            .commit()
+                    }
+
+                    null -> {
+
+                    }
+                }
+                drawerType = null
+                lifecycleScope.launch {
+                    //Delay for animation to show proper after UI(Fragment) visible to user
+                    delay(100)
+                    checkfrom_topfragment(true)
+                }
+
+            }
+
+            override fun onDrawerOpened(drawerView: View) {
+                super.onDrawerOpened(drawerView)
+                profile()
+                FillDrawer()
+                adapter!!.notifyDataSetChanged()
+                ApplicationController.addAdjustEvent(Constant.AdjustEvent.OpenSlideMenu.event)
+
+            }
+
+            override fun onDrawerStateChanged(newState: Int) {
+                super.onDrawerStateChanged(newState)
+                val view = this@Home.currentFocus
+                if (view != null) {
+                    hideKeyboard(this@Home)
+                }
+            }
+        }
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resourceId > 0) {
+            Constant.statusBarHeight = resources.getDimensionPixelSize(resourceId)
+        }
+
+        val styledAttributes =
+            theme.obtainStyledAttributes(intArrayOf(android.R.attr.actionBarSize))
+        Constant.actionBarHeight = styledAttributes.getDimension(0, 0f).toInt()
+        styledAttributes.recycle()
+        drawer!!.addDrawerListener(toggle!!)
+        toggle?.syncState()
+        toolbar!!.setNavigationOnClickListener {
+            if (SystemClock.elapsedRealtime() - Constant.homeScreenLastClickTime > 1200) {
+                Constant.homeScreenLastClickTime = SystemClock.elapsedRealtime()
+                if (drawer!!.getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
+                    checkFreeTrial()
+                    drawer!!.openDrawer(GravityCompat.START)
+                } else if (toolbar!!.title.toString().isEmpty()) {
+                    checkFreeTrial()
+                    drawer!!.openDrawer(GravityCompat.START)
+                } else {
+                    if (toolbar!!.title.toString()
+                            .equals(resources.getString(R.string.detailfr), ignoreCase = true)
+                    ) {
+                        try {
+                            hideKeyboard(this)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        checkfrom_topfragment(false)
+                        val fragmentManager = supportFragmentManager
+                        fragmentManager.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager.beginTransaction()
+                            .add(
+                                R.id.main_container, HomeFragment.newInstance(
+                                    "",
+                                    receiverEmailFromLink = receiverEmailFromLink
+                                )
+                            )
+                            .addToBackStack(null)
+                            .commit()
+                    } else {
+
+                        if (!isSignatureEdit) {
+                            checkfrom_topfragment(false)
+                            val fragmentManager = supportFragmentManager
+                            fragmentManager.popBackStackImmediate(
+                                null,
+                                FragmentManager.POP_BACK_STACK_INCLUSIVE
+                            )
+                            fragmentManager.beginTransaction()
+                                .add(
+                                    R.id.main_container, HomeFragment.newInstance(
+                                        "",
+                                        receiverEmailFromLink = receiverEmailFromLink
+                                    )
+                                )
+                                .addToBackStack(null)
+                                .commit()
+                        }
+                    }
+                }
+            }
+        }
+
+        sp?.edit {
+            putInt("draft_count", 0)
+        }
+
+        FirebaseCrashlytics.getInstance().setUserId(AppPrefs.secure_id)
+        FirebaseCrashlytics.getInstance().setCustomKey("userId", AppPrefs.GUID)
+        Log.e(
+            TAG,
+            "onCreate: PAYWALL DISPLAY SharedFilePath= " + SharedFilePath.toString() + " -from= " + from + "---isLog" + AppPrefs.isFromlogin
+        )
+        Log.e(TAG, "onCreate: PAYWALL DISPLAY " + from + "---")
+
+        Log.e(TAG, "onCreate: PAYWALL DISPLAY " + "---isLog" + AppPrefs.isFromlogin )
+
+        if (SharedFilePath.isEmpty()) {
+            if (!from.equals("DownloadFile", true) && !from.equals("DirectExport", true)
+                && !from.equals("forceLoginac", true)
+                && !from.equals("PN", true)
+                && !from.equals("Login", true)
+                && !from.equals("DirectExport_1", true)
+                && !from.equals("themeChange", true)
+            ) {
+                moveToNextScreen()
+//                checkForForceLogin()
+            } else {
+            }
+
+        }
+        CurrentMarketVersionName = BuildConfig.VERSION_NAME
+        call_force_update()
+        gaTracking()
+        callGetCredit()
+        scheduleJob()
+        Utils.scheduleJob(this@Home)
+
+        commonFunction!!.scheduleOrCancelAlarms(this@Home, sp)
+
+
+        /*lifecycleScope.launchWhenStarted {
+            connectivityObserver.observe().collectLatest {
+                Log.e("Network---->>",it.name.toString()+"<"+lastStatus.name)
+                when (it) {
+
+                    ConnectivityObserver.Status.Available -> {
+                        if(it!=lastStatus){
+                            //
+                            Log.e("Network---->>","CAll API AGAIN"+"<")
+                            val workRequest = OneTimeWorkRequest.Builder(NetworkSchedulerWorker::class.java).build()
+                            WorkManager.getInstance(this@Home).enqueue(workRequest)
+                        }
+                       // Toast.makeText(this@Home,"Network Available",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Unavailable -> {
+                      //  Toast.makeText(this@Home,"Network Unavailable",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Losing -> {
+                     //   Toast.makeText(this@Home,"Network Losing",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Lost -> {
+                      //  Toast.makeText(this@Home,"Network Lost",Toast.LENGTH_LONG).show()
+
+                    }
+                }
+                lastStatus =it
+
+
+            }
+        }*/
+
+        ApplicationController.isSubscribed.observe(this, androidx.lifecycle.Observer { isSubcribe ->
+            lifecycleScope.launch(Dispatchers.Main) {
+                Log.e("ISSBSCRIBE", "HOME- " + isSubcribe)
+                FillDrawer()
+            }
+        })
+        ReceivePushNotification.isUpdatePn.observe(this, androidx.lifecycle.Observer {
+
+            it?.let {
+                val map = mutableMapOf<String, String>()
+                map.put("docKey", "")
+                map.put("purpose", "")
+                map.put("title", "")
+                ReceivePushNotification.isUpdatePn.postValue(map)
+            }
+        })
+        ReceivePushNotification.isEmailPn.observe(this, androidx.lifecycle.Observer {
+            it?.let {
+                if (it) {
+                    ReceivePushNotification.isEmailPn.postValue(false)
+                    AppPrefs.isEmailVerified = 1
+                }
+            }
+        })
+
+
+        handleUpdateEvent()
+    }
