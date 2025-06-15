@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. -->
+    <style name="Theme.SplashDemo" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary colors and general app theming -->
+        <item name="android:windowSplashScreenBackground">@color/purple_700</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/purple_900</item>
+        <item name="android:windowSplashScreenAnimationDuration">700</item>
+        <item name="postSplashScreenTheme">@style/Theme.SplashDemo.App</item>
+    </style>
+
+    <style name="Theme.SplashDemo.App" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Application theme after splash -->
+        <item name="colorPrimary">@color/purple_700</item>
+        <item name="colorPrimaryVariant">@color/purple_900</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+    </style>
+</resources>
+
+splashScreen.setOnExitAnimationListener { splashScreenView ->
+    splashScreenView.post {
+        // Create a zoom-in animation
+        val zoomInX = ObjectAnimator.ofFloat(splashScreenView, "scaleX", 0f, 1f)
+        val zoomInY = ObjectAnimator.ofFloat(splashScreenView, "scaleY", 0f, 1f)
+
+        // Set interpolator and duration
+        zoomInX.interpolator = AccelerateInterpolator()
+        zoomInY.interpolator = AccelerateInterpolator()
+        zoomInX.duration = 300 // Duration of the zoom-in animation
+        zoomInY.duration = 300 // Duration of the zoom-in animation
+
+        // Start both animations
+        zoomInX.start()
+        zoomInY.start()
+
+        // Remove the splash screen view after the animation ends
+        zoomInY.doOnEnd { splashScreenView.remove() }
+    }
+}
