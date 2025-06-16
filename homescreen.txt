@@ -1,0 +1,3239 @@
+package amplify.fill.activity
+
+import amplify.fill.BuildConfig
+import amplify.fill.ManageUi.BaseActivity
+import amplify.fill.R
+import amplify.fill.activity.LoginActivity.Companion.getActivityIntent
+import amplify.fill.activity.contactus.ContactUsActivity
+import amplify.fill.activity.contactus.SupportSubjectType
+import amplify.fill.adapter.DrawerListAdapter
+import amplify.fill.adapter.RecentListAdapter
+import amplify.fill.avatarview.IImageLoader
+import amplify.fill.avatarview.PicassoLoader
+import amplify.fill.avatarview.views.AvatarView
+import amplify.fill.common.*
+import amplify.fill.common.ConnectivityReceiver.ConnectivityReceiverListener
+import amplify.fill.common.Constant.FT_TO_PAID_119
+import amplify.fill.common.Constant.FT_TO_PAID_14
+import amplify.fill.common.Constant.FT_TO_PAID_79
+import amplify.fill.common.Constant.FT_TO_PAID_99
+import amplify.fill.dialogs.PurchaseSuccessDialog
+import amplify.fill.fragment.*
+import amplify.fill.interfaces.ScrollNotify
+import amplify.fill.model.CommonResponse
+import amplify.fill.model.NavItem
+import amplify.fill.model.Subscription
+import amplify.fill.network.ApiConst
+import amplify.fill.push.ReceivePushNotification
+import amplify.fill.service.DownloadServerSign
+import amplify.fill.utils.*
+import amplify.fill.utils.AppPrefs.subscriptions
+import amplify.fill.utils.KotlinUtils.capitalizeString
+import amplify.fill.utils.Utils.hideKeyboard
+import android.Manifest
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.*
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener
+import android.content.res.Configuration
+import android.graphics.PorterDuff
+import android.net.ConnectivityManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
+import android.text.Html
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.util.Base64
+import android.util.Log
+import android.util.TypedValue
+import android.view.*
+import android.view.animation.AlphaAnimation
+import android.view.animation.DecelerateInterpolator
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.ActionBarDrawerToggle
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.Toolbar
+import androidx.cardview.widget.CardView
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.core.content.edit
+import androidx.core.view.GravityCompat
+import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
+import androidx.drawerlayout.widget.DrawerLayout
+import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.lifecycleScope
+import androidx.preference.PreferenceManager
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import com.android.billingclient.api.*
+import com.google.android.material.navigation.NavigationView
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import io.github.rupinderjeet.kprogresshud.KProgressHUD
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
+import timber.log.Timber
+import java.io.File
+import java.nio.charset.StandardCharsets
+import java.util.*
+
+
+@SuppressLint("ApplySharedPref")
+class Home : BaseActivity(), AdapterView.OnItemClickListener, View.OnClickListener,
+    ScrollNotify, APITaskListener, ConnectivityReceiverListener ,OnSharedPreferenceChangeListener {
+
+    private val TAG = "Home"
+    var navigationView: NavigationView? = null
+    var adapter: DrawerListAdapter? = null
+    var mNavItems: ArrayList<NavItem>? = null
+    var header: ViewGroup? = null
+    var mDrawerList: ListView? = null
+    var welcome: TextView? = null
+    var login: TextView? = null
+    var tvLogout: TextView? = null
+    var headerpart: LinearLayout? = null
+    var imageLoader: IImageLoader? = null
+    private var account_image: AvatarView? = null
+    private var FragmentModel = ArrayList<String>()
+    var exit = false
+    var sp: SharedPreferences? = null
+    var myview: RelativeLayout? = null
+    var tryCover: RelativeLayout? = null
+    var cvTryFillUnlimited: CardView? = null
+    var cvEmailVerification: CardView? = null
+    var tvTryForFreeSubtitle: TextView? = null
+    var tv_free_unlimited: TextView? = null
+    var tv_remainDoc: TextView? = null
+    var layFreeTrial: ConstraintLayout? = null
+    var doc_prgress: ProgressBar? = null
+    var get_doc_free_unlimited: TextView? = null
+    var ivVerifyicon: ImageView? = null
+    var ivFreeicon: ImageView? = null
+    var tvTryForFree: TextView? = null
+    var tvVersion: TextView? = null
+    private var tvVerifyEmail: TextView? = null
+    private var tvVerifyEmailsubtitle: TextView? = null
+    private var tv_free: TextView? = null
+    var divider: View? = null
+    var divider_f: View? = null
+    var requestListener: RequestListener? = null
+    var connection: CheckInternetConnection? = null
+    var commonFunction: CommonFunction? = null
+    private var IsLoggedin = false
+    private var OutDated = false
+    private var FIX: String? = null
+    private var NEW: String? = null
+    private var SharedFilePath = ""
+    private var moveToNewDocument = ""
+    private var receiverEmailFromLink = ""
+    var forDownload = false
+    private var CurrentMarketVersion = 1
+    private var CurrentMarketVersionName = "1.0"
+    var billingClient: BillingClient? = null
+    var from: String = ""
+    private var isSignatureEdit = false
+    private var showlogindialog = false
+    private var mLastClickTime: Long = 0
+    private var drawerType: DrawerType? = null
+    private val colorWhite by lazy { ContextCompat.getColor(applicationContext, android.R.color.white) }
+    private val colorPrimary by lazy { ContextCompat.getColor(applicationContext, R.color.colorPrimary) }
+
+    var lastStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Unavailable
+    private val resultLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (it.resultCode == Activity.RESULT_OK) {
+                callGetCredit()
+            }
+        }
+
+    override fun isTablet(isTablet: Boolean) {
+        Home.isTablet = isTablet
+
+        if (isTablet) {
+            Log.e("Home", "isTablet:$isTablet ")
+            tvTryForFree!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvTryForFreeSubtitle!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvVerifyEmail!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._8ssp)
+            )
+            welcome!!.setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen._8ssp))
+            login!!.setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen._8ssp))
+            tvVerifyEmailsubtitle!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvLogout!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._8ssp)
+            )
+            ivVerifyicon!!.layoutParams.height = 30
+            ivFreeicon!!.layoutParams.height = 30
+        }
+    }
+
+    override fun initBinding() {
+        setContentView(R.layout.activity_main)
+        SharedFilePath = intent.getStringExtra("filePath") ?: ""
+        receiverEmailFromLink = intent.getStringExtra("receiverEmailFromLink") ?: ""
+        forDownload = intent.getBooleanExtra("forDownload", false)
+
+        SharedFilePath = Constant.filePath
+        receiverEmailFromLink = Constant.receiverEmailFromLink
+        forDownload = Constant.isImport
+
+        val fragmentManager = supportFragmentManager
+        fragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        fragmentManager.beginTransaction()
+            .add(
+                R.id.main_container,
+                HomeFragment.newInstance(SharedFilePath, forDownload, receiverEmailFromLink)
+            )
+            .addToBackStack(null)
+            .commit()
+        val inflater1 = layoutInflater
+        header = inflater1.inflate(R.layout.nav_header_home, mDrawerList, false) as ViewGroup
+        welcome = header!!.findViewById(R.id.textView)
+        login = header!!.findViewById(R.id.textView2)
+        tvLogout = header!!.findViewById(R.id.tvLogout)
+        headerpart = header!!.findViewById(R.id.header_section)
+        account_image = header!!.findViewById(R.id.imageView)
+        cvTryFillUnlimited = header!!.findViewById(R.id.cvTryFillUnlimited)
+        cvEmailVerification = header!!.findViewById(R.id.cvEmailVerification)
+        tvTryForFreeSubtitle = header!!.findViewById(R.id.tvTryForFreeSubtitle)
+        divider = header!!.findViewById(R.id.divider)
+        divider_f = header!!.findViewById(R.id.divider_f)
+        tvTryForFree = header!!.findViewById(R.id.tvTryForFree)
+        tryCover = header!!.findViewById(R.id.verifyCover)
+        tvVerifyEmail = header!!.findViewById(R.id.tvVerifyEmail)
+        tvVerifyEmailsubtitle = header!!.findViewById(R.id.tvVerifyEmailsubtitle)
+        tv_free = header!!.findViewById(R.id.tv_free)
+        tv_free_unlimited = header!!.findViewById(R.id.free_unlimited)
+        tv_remainDoc = header!!.findViewById(R.id.tv_remainDoc)
+        ivFreeicon = header!!.findViewById(R.id.ivFreeicon)
+        ivVerifyicon = header!!.findViewById(R.id.ivVerifyicon)
+
+
+        toolbar = findViewById<View>(R.id.toolbar) as Toolbar
+        drawer = findViewById<View>(R.id.drawer_layout) as DrawerLayout
+
+        /*val params: LinearLayout.LayoutParams =
+                  LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+               params.setMargins(10, 10, 10, 10)
+               tryCover!!.setLayoutParams(params)*/
+    }
+
+    private val connectivityObserver: NetworkConnectivityObserver by lazy {
+        NetworkConnectivityObserver(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+//        setContentView(R.layout.activity_main)
+        toolbar = findViewById<View>(R.id.toolbar) as Toolbar
+        //Thread.setDefaultUncaughtExceptionHandler(new MyExceptionHandler(this));
+        setSupportActionBar(toolbar)
+        settitle(resources.getString(R.string.activity))
+        overlay = findViewById(R.id.overlay)
+        Log.e(TAG, "onCreate()  ")
+        val key = intent.extras?.keySet()
+
+        if (savedInstanceState != null){
+            intent.putExtra("from",savedInstanceState.getString("from"))
+            if (AppPrefs.GUID.isEmpty()) {
+                fetchLocalData()
+            }
+        }
+        //   Log.e("Key Home",key?.map { it.toString() }.toString())
+
+        requestListener = RequestListener(this)
+        commonFunction = CommonFunction(this)
+        connection = CheckInternetConnection(this)
+        sp = PreferenceManager.getDefaultSharedPreferences(this)
+
+        AppPrefs.UserCredits = sp?.getString("user_credits", "0") ?: "0"
+        AppPrefs.isSubscribed = sp?.getString("isSubscribed", "0") ?: "0"
+        AppPrefs.isFreeTrialUsed = sp?.getString("isFreeTrialUsed", "0") ?: "0"
+        AppPrefs.purchaseStatus = sp?.getString("purchaseStatus", "") ?: ""
+        RecentListAdapter.isInEditMode = false
+        AppPrefs.isLoginReqSign = false
+
+        supportActionBar?.title = ""
+        supportActionBar?.elevation = 0f
+//        moveToNewDocument = intent.getStringExtra("moveToNewDocument") ?: ""
+
+//        SharedFilePath = intent.getStringExtra("filePath") ?: ""
+//        receiverEmailFromLink = intent.getStringExtra("receiverEmailFromLink") ?: ""
+//        forDownload = intent.getBooleanExtra("forDownload", false)
+        drawer = findViewById<View>(R.id.drawer_layout) as DrawerLayout
+        //        drawer.setDrawerElevation(10);
+        FragmentModel.add(resources.getString(R.string.creditfr))
+        FragmentModel.add(resources.getString(R.string.datefr))
+        FragmentModel.add(resources.getString(R.string.detailfr))
+        FragmentModel.add(resources.getString(R.string.signaturefr))
+        FragmentModel.add(resources.getString(R.string.about))
+
+        imageLoader = PicassoLoader()
+        navigationView = findViewById<View>(R.id.nav_view) as NavigationView
+        myview = findViewById<View>(R.id.main_container) as RelativeLayout
+        if (Constant.manageDetailList == null || Constant.manageDetailList.size <= 0) {
+//            Utils.fillCategory(this)
+        }
+        val mConnectivityReceiver = ConnectivityReceiver(this)
+        registerReceiverNonExported(
+            mConnectivityReceiver,
+            IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION)
+        )
+        registerReceiverNonExported(mEmailVerificationReceiver, IntentFilter().apply {
+            addAction(Constant.INTENT_ACTION_EMAIL_VERIFICATION)
+            addAction(Constant.INTENT_ACTION_RECEIVER_FINISH_PROCESS)
+            addAction(Constant.INTENT_ACTION_PAYWALL_CLICK)
+        })
+        init()
+        /*val fragmentManager = supportFragmentManager
+        fragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        fragmentManager.beginTransaction()
+            .add(R.id.main_container, HomeFragment.newInstance(SharedFilePath, forDownload,receiverEmailFromLink))
+            .addToBackStack(null)
+            .commit()*/
+
+        var backStackJob: Job? = null
+        val backStackDelay = 200L // Adjust delay as needed
+        val activityString = resources.getString(R.string.activity)
+
+        supportFragmentManager.addOnBackStackChangedListener {
+            backStackJob?.cancel() // Cancel any previous pending job
+            backStackJob = CoroutineScope(Dispatchers.Main).launch {
+                delay(backStackDelay) // Wait for a short period of inactivity
+
+                if (supportFragmentManager.backStackEntryCount == 0) {
+                    // ... your code ...
+                } else {
+                    val currentFrag = supportFragmentManager.findFragmentById(R.id.main_container)
+                    if (currentFrag != null) {
+                        val simpleName = currentFrag.javaClass.simpleName
+
+                        if (simpleName == activityString) {
+                            changeActionBar(false)
+                        } else if (FragmentModel.contains(simpleName)) {
+                            changeActionBar(true)
+                        }
+                    }
+                }
+                backStackJob = null // Reset the job
+            }
+        }
+
+        toggle = object : ActionBarDrawerToggle(
+            this,
+            drawer,
+            toolbar,
+            R.string.navigation_drawer_blank,
+            R.string.navigation_drawer_close
+        ) {
+            override fun onDrawerClosed(view: View) {
+                super.onDrawerClosed(view)
+                when (drawerType) {
+                    DrawerType.MyDetails -> {
+                        val fragmentManager2 = supportFragmentManager
+                        fragmentManager2.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager2.beginTransaction()
+                            .replace(R.id.main_container, MyDetailFragment.newInstance())
+                            .addToBackStack(null)
+                            .commit()
+                    }
+
+                    DrawerType.DateFormat -> {
+                        val fragmentManager3 = supportFragmentManager
+                        fragmentManager3.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager3.beginTransaction()
+                            .replace(R.id.main_container, DateFormatFragment.newInstance())
+                            .addToBackStack(null)
+                            .commit()
+                    }
+
+                    null -> {
+
+                    }
+                }
+                drawerType = null
+                lifecycleScope.launch {
+                    //Delay for animation to show proper after UI(Fragment) visible to user
+                    delay(100)
+                    checkfrom_topfragment(true)
+                }
+
+            }
+
+            override fun onDrawerOpened(drawerView: View) {
+                super.onDrawerOpened(drawerView)
+                profile()
+                FillDrawer()
+                adapter!!.notifyDataSetChanged()
+                ApplicationController.addAdjustEvent(Constant.AdjustEvent.OpenSlideMenu.event)
+
+            }
+
+            override fun onDrawerStateChanged(newState: Int) {
+                super.onDrawerStateChanged(newState)
+                val view = this@Home.currentFocus
+                if (view != null) {
+                    hideKeyboard(this@Home)
+                }
+            }
+        }
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resourceId > 0) {
+            Constant.statusBarHeight = resources.getDimensionPixelSize(resourceId)
+        }
+
+        val styledAttributes =
+            theme.obtainStyledAttributes(intArrayOf(android.R.attr.actionBarSize))
+        Constant.actionBarHeight = styledAttributes.getDimension(0, 0f).toInt()
+        styledAttributes.recycle()
+        drawer!!.addDrawerListener(toggle!!)
+        toggle?.syncState()
+        toolbar!!.setNavigationOnClickListener {
+            if (SystemClock.elapsedRealtime() - Constant.homeScreenLastClickTime > 1200) {
+                Constant.homeScreenLastClickTime = SystemClock.elapsedRealtime()
+                if (drawer!!.getDrawerLockMode(GravityCompat.START) == DrawerLayout.LOCK_MODE_UNLOCKED) {
+                    checkFreeTrial()
+                    drawer!!.openDrawer(GravityCompat.START)
+                } else if (toolbar!!.title.toString().isEmpty()) {
+                    checkFreeTrial()
+                    drawer!!.openDrawer(GravityCompat.START)
+                } else {
+                    if (toolbar!!.title.toString()
+                            .equals(resources.getString(R.string.detailfr), ignoreCase = true)
+                    ) {
+                        try {
+                            hideKeyboard(this)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        checkfrom_topfragment(false)
+                        val fragmentManager = supportFragmentManager
+                        fragmentManager.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager.beginTransaction()
+                            .add(
+                                R.id.main_container, HomeFragment.newInstance(
+                                    "",
+                                    receiverEmailFromLink = receiverEmailFromLink
+                                )
+                            )
+                            .addToBackStack(null)
+                            .commit()
+                    } else {
+
+                        if (!isSignatureEdit) {
+                            checkfrom_topfragment(false)
+                            val fragmentManager = supportFragmentManager
+                            fragmentManager.popBackStackImmediate(
+                                null,
+                                FragmentManager.POP_BACK_STACK_INCLUSIVE
+                            )
+                            fragmentManager.beginTransaction()
+                                .add(
+                                    R.id.main_container, HomeFragment.newInstance(
+                                        "",
+                                        receiverEmailFromLink = receiverEmailFromLink
+                                    )
+                                )
+                                .addToBackStack(null)
+                                .commit()
+                        }
+                    }
+                }
+            }
+        }
+
+        sp?.edit {
+            putInt("draft_count", 0)
+        }
+
+        FirebaseCrashlytics.getInstance().setUserId(AppPrefs.secure_id)
+        FirebaseCrashlytics.getInstance().setCustomKey("userId", AppPrefs.GUID)
+        Log.e(
+            TAG,
+            "onCreate: PAYWALL DISPLAY SharedFilePath= " + SharedFilePath.toString() + " -from= " + from + "---isLog" + AppPrefs.isFromlogin 
+        )
+        Log.e(TAG, "onCreate: PAYWALL DISPLAY " + from + "---")
+
+        Log.e(TAG, "onCreate: PAYWALL DISPLAY " + "---isLog" + AppPrefs.isFromlogin )
+
+        if (SharedFilePath.isEmpty()) {
+            if (!from.equals("DownloadFile", true) && !from.equals("DirectExport", true)
+                && !from.equals("forceLoginac", true)
+                && !from.equals("PN", true)
+                && !from.equals("Login", true)
+                && !from.equals("DirectExport_1", true)
+                && !from.equals("themeChange", true)
+            ) {
+                moveToNextScreen()
+//                checkForForceLogin()
+            } else {
+            }
+
+        }
+        CurrentMarketVersionName = BuildConfig.VERSION_NAME
+        call_force_update()
+        gaTracking()
+        callGetCredit()
+        scheduleJob()
+        Utils.scheduleJob(this@Home)
+
+        commonFunction!!.scheduleOrCancelAlarms(this@Home, sp)
+
+
+        /*lifecycleScope.launchWhenStarted {
+            connectivityObserver.observe().collectLatest {
+                Log.e("Network---->>",it.name.toString()+"<"+lastStatus.name)
+                when (it) {
+
+                    ConnectivityObserver.Status.Available -> {
+                        if(it!=lastStatus){
+                            //
+                            Log.e("Network---->>","CAll API AGAIN"+"<")
+                            val workRequest = OneTimeWorkRequest.Builder(NetworkSchedulerWorker::class.java).build()
+                            WorkManager.getInstance(this@Home).enqueue(workRequest)
+                        }
+                       // Toast.makeText(this@Home,"Network Available",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Unavailable -> {
+                      //  Toast.makeText(this@Home,"Network Unavailable",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Losing -> {
+                     //   Toast.makeText(this@Home,"Network Losing",Toast.LENGTH_LONG).show()
+                    }
+                    ConnectivityObserver.Status.Lost -> {
+                      //  Toast.makeText(this@Home,"Network Lost",Toast.LENGTH_LONG).show()
+
+                    }
+                }
+                lastStatus =it
+
+
+            }
+        }*/
+
+        ApplicationController.isSubscribed.observe(this, androidx.lifecycle.Observer { isSubcribe ->
+            lifecycleScope.launch(Dispatchers.Main) {
+                Log.e("ISSBSCRIBE", "HOME- " + isSubcribe)
+                FillDrawer()
+            }
+        })
+        ReceivePushNotification.isUpdatePn.observe(this, androidx.lifecycle.Observer {
+
+            it?.let {
+                val map = mutableMapOf<String, String>()
+                map.put("docKey", "")
+                map.put("purpose", "")
+                map.put("title", "")
+                ReceivePushNotification.isUpdatePn.postValue(map)
+            }
+        })
+        ReceivePushNotification.isEmailPn.observe(this, androidx.lifecycle.Observer {
+            it?.let {
+                if (it) {
+                    ReceivePushNotification.isEmailPn.postValue(false)
+                    AppPrefs.isEmailVerified = 1
+                }
+            }
+        })
+
+
+        handleUpdateEvent()
+    }
+
+    private fun checkForPostNotificationPermission() {
+
+        if (Build.VERSION.SDK_INT > 32) {
+            if (!shouldShowRequestPermissionRationale("116")) {
+                getNotificationPermission();
+            }
+        }
+    }
+
+    fun getNotificationPermission() {
+
+        try {
+
+            if (Build.VERSION.SDK_INT > 32) {
+                ActivityCompat.requestPermissions(
+                    this, arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    116
+                )
+            } else {
+            }
+
+        } catch (e: java.lang.Exception) {
+        }
+    }
+
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        toggle?.syncState()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        toggle?.onConfigurationChanged(newConfig)
+    }
+
+    private fun moveToNextScreen() {
+        if (AppPrefs.isSubscribed.equals(
+                "0",
+                ignoreCase = true
+            )
+        ) {
+            Log.d("DebugLog", "In home, before open welcome")
+            if (subscriptions.isNotEmpty()) {
+
+                if (Constant.moveTonewDocument == "moveToNewDocument") {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        HomeFragment.executeClick()
+                    }, 600)
+
+                } else {
+                    Handler(Looper.getMainLooper()).postDelayed({
+//                        val intent = Intent(this@Home, OnBoardingPurchaseScreen::class.java).apply {
+    //                            putExtra("isFromWelcome", true)
+//                        }
+//                        startActivityForResult(intent, 123)
+                        purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                        overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                    }, 600)
+
+
+                }
+
+            }
+//                if(from.equals("test")){
+//                    startActivityForResult(LoginActivity.getActivityIntent(this@Home), 110)
+//                }
+        } else {
+            checkForPostNotificationPermission()
+            if (Constant.moveTonewDocument == "moveToNewDocument") {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    HomeFragment.executeClick()
+                }, 600)
+            }
+        }
+        Constant.moveTonewDocument = ""
+    }
+
+    private fun openForPurchase() {
+        if (subscriptions.isNotEmpty()) {
+//            val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+//            startActivityForResult(intent,123)
+            purchaseLauncher.launch(Intent(this@Home,OnBoardingPurchaseScreen::class.java))
+            overridePendingTransition( R.anim.rtf, R.anim.left_to_right)
+        }
+    }
+
+    private fun checkfrom_topfragment(b: Boolean) {
+        if (toolbar!!.title.toString().contains(resources.getString(R.string.creditfr))) {
+            logic_rotate(b)
+        } else if (toolbar!!.title.toString()
+                .equals(resources.getString(R.string.datefr), ignoreCase = true)
+        ) {
+            logic_rotate(b)
+        } else if (toolbar!!.title.toString().contains(resources.getString(R.string.detailfr))) {
+            logic_rotate(b)
+        } else if (toolbar!!.title.toString()
+                .equals(resources.getString(R.string.signaturefr), ignoreCase = true)
+        ) {
+            logic_rotate(b)
+        } else if (toolbar!!.title.toString()
+                .equals(resources.getString(R.string.about), ignoreCase = true)
+        ) {
+            logic_rotate(b)
+        }
+    }
+
+    private fun checkForForceLogin() {
+        if (AppPrefs.forceLogin == 0) {
+
+            //  startActivityForResult(LoginActivity.getActivityIntent(this@Home), 110)
+            // overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+
+        } else if (AppPrefs.isEmailVerified == 0) {
+            Log.e("EMAIL-VERI", "FROM-HOME-")
+            AlertDialog.Builder(this, R.style.MyDialogTheme)
+                .setTitle(R.string.title_verify_email)
+                .setMessage(R.string.msg_verify_email)
+                .setPositiveButton(getString(R.string.resend)) { dialog: DialogInterface?, which: Int ->
+                    CommonAPI.resendEmailVerification(this@Home)
+                }
+                .setNegativeButton(getString(R.string.close)) { dialog: DialogInterface, which: Int -> dialog.dismiss() }
+                .show()
+        }
+    }
+
+    private fun init() {
+
+        mNavItems = ArrayList()
+        mDrawerList = navigationView!!.findViewById(R.id.navList)
+        tvVersion = navigationView!!.findViewById(R.id.versionTv)
+        val inflater1 = layoutInflater
+        header = inflater1.inflate(R.layout.nav_header_home, mDrawerList, false) as ViewGroup
+        welcome = header!!.findViewById(R.id.textView)
+        login = header!!.findViewById(R.id.textView2)
+        tvLogout = header!!.findViewById(R.id.tvLogout)
+        headerpart = header!!.findViewById(R.id.header_section)
+        headerpart?.setPadding(
+            resources.getDimension(R.dimen.drawer_logo).toInt(),
+            statusBarHeight,
+            resources.getDimension(R.dimen.drawer_logo).toInt(),
+            0
+        )
+        account_image = header!!.findViewById(R.id.imageView)
+        val tryCover1 = header!!.findViewById<RelativeLayout>(R.id.tryCover)
+        cvTryFillUnlimited = header!!.findViewById(R.id.cvTryFillUnlimited)
+        cvEmailVerification = header!!.findViewById(R.id.cvEmailVerification)
+        tvTryForFreeSubtitle = header!!.findViewById(R.id.tvTryForFreeSubtitle)
+        tv_free_unlimited = header!!.findViewById(R.id.free_unlimited)
+        tv_remainDoc = header!!.findViewById(R.id.tv_remainDoc)
+        tv_free = header!!.findViewById(R.id.tv_free)
+        layFreeTrial = header?.findViewById(R.id.layFreeTrial)
+        divider_f = header!!.findViewById(R.id.divider_f)
+        doc_prgress = header?.findViewById(R.id.doc_prgress)
+
+        doc_prgress?.max = Constant.maxFreeDocCount
+
+        get_doc_free_unlimited = header!!.findViewById(R.id.free_unlimited)
+        divider = header!!.findViewById(R.id.divider)
+        mDrawerList?.addHeaderView(header)
+        adapter = DrawerListAdapter(this, mNavItems!!)
+        mDrawerList?.adapter = adapter
+        mDrawerList?.onItemClickListener = this
+        mDrawerList?.overScrollMode = View.OVER_SCROLL_NEVER
+        login?.setOnClickListener(this)
+        tvLogout?.setOnClickListener(this)
+        account_image?.setOnClickListener(this)
+        cvTryFillUnlimited?.setOnClickListener(this)
+        cvEmailVerification?.setOnClickListener(this)
+        tv_free_unlimited?.setOnClickListener(this)
+        tv_remainDoc?.setOnClickListener(this)
+
+        //temp
+        if (AppPrefs.isFreeTrialMode == 1) {
+            layFreeTrial?.visible()
+            divider_f?.visible()
+        } else {
+            layFreeTrial?.gone()
+            divider_f?.gone()
+        }
+
+        FillDrawer()
+        profile()
+        getBundel()
+        if (Utils.isTab(this)) {
+            tvTryForFree!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvTryForFreeSubtitle!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvVerifyEmail!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            tvVerifyEmailsubtitle!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._6ssp)
+            )
+            welcome!!.setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen._8ssp))
+            login!!.setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen._8ssp))
+            tvLogout!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._8ssp)
+            )
+            ivVerifyicon!!.layoutParams.height = 28
+            ivFreeicon!!.layoutParams.height = 28
+            tryCover?.updatePadding(resources.getDimension(R.dimen._8ssp).toInt())
+            tryCover1?.updatePadding(resources.getDimension(R.dimen._8ssp).toInt())
+
+            tv_free!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._8ssp)
+            )
+            tv_remainDoc!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._8ssp)
+            )
+
+            tv_free_unlimited?.updatePadding(
+                resources.getDimension(R.dimen.horizontal_padding).toInt(),
+                resources.getDimension(R.dimen.vertical_padding).toInt(),
+                resources.getDimension(R.dimen.horizontal_padding).toInt(),
+                resources.getDimension(R.dimen.vertical_padding).toInt()
+            )
+
+            tv_free_unlimited!!.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                resources.getDimension(R.dimen._5ssp)
+            )
+
+            doc_prgress?.scaleY = 1.4f
+            tv_remainDoc?.setCompoundDrawablesWithIntrinsicBounds(
+                null,
+                null,
+                ContextCompat.getDrawable(this@Home, R.drawable.ic_info_plan_big),
+                null
+            )
+        }
+    }
+
+    private fun getBundel() {
+        val bundle = intent.extras
+        bundle?.let {
+            from = it.getString("from", "")
+            when (from) {
+                "DownloadFile" -> {
+                    val filePath: String? = it.getString("FILE_PATH", "")
+                    filePath ?: return
+                    val imageView = ImageView(this)
+                    imageView.setBackgroundResource(R.drawable.ic_right)
+                    val fadeIn = AlphaAnimation(0f, 1f)
+                    fadeIn.interpolator = DecelerateInterpolator() //add this
+                    fadeIn.duration = 1000
+                    imageView.animation = fadeIn
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        withContext(Dispatchers.Main) {
+                            val hud = KProgressHUD.create(this@Home)
+                                .setCustomView(imageView)
+                                .setLabel(getString(R.string.download_doc))
+                                .show()
+                            delay(1100)
+                            hud.dismiss()
+                            val uri = FileProvider.getUriForFile(
+                                this@Home,
+                                BuildConfig.APPLICATION_ID + ".provider",
+                                File(filePath)
+                            )
+                            val share = Intent()
+                            share.action = Intent.ACTION_SEND
+                            share.type = "application/pdf"
+                            share.putExtra(Intent.EXTRA_STREAM, uri)
+
+                            val excludedPackage = "amplify.fill"
+                            val excludedComponents = ArrayList<ComponentName>()
+                            val resolveInfoList = packageManager.queryIntentActivities(share, 0)
+
+                            for (resInfo in resolveInfoList) {
+                                val packageName = resInfo.activityInfo.packageName
+                                val name = resInfo.activityInfo.name
+                                if (packageName.contains(excludedPackage)) {
+                                    excludedComponents.add(ComponentName(packageName, name))
+                                }
+                            }
+
+                            startActivity(
+                                Intent.createChooser(share, getString(R.string.choose_option))
+                                    .putExtra(
+                                        Intent.EXTRA_EXCLUDE_COMPONENTS,
+                                        excludedComponents.toTypedArray()
+                                    )
+                            )
+
+                        }
+                    }
+
+
+                }
+
+                "DownloadFile_1" -> {
+                    val imageView = ImageView(this)
+                    imageView.setBackgroundResource(R.drawable.ic_right)
+                    val fadeIn = AlphaAnimation(0f, 1f)
+                    fadeIn.interpolator = DecelerateInterpolator() //add this
+                    fadeIn.duration = 1000
+                    imageView.animation = fadeIn
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        withContext(Dispatchers.Main) {
+                            val hud = KProgressHUD.create(this@Home)
+                                .setCustomView(imageView)
+                                .setLabel(getString(R.string.doc_download_success))
+                                .show()
+                            delay(1100)
+                            hud.dismiss()
+
+                        }
+                    }
+                }
+
+                "DirectExport_1" -> {
+
+                    val imageView = ImageView(this)
+                    imageView.setBackgroundResource(R.drawable.ic_right)
+                    val fadeIn = AlphaAnimation(0f, 1f)
+                    fadeIn.interpolator = DecelerateInterpolator() //add this
+                    fadeIn.duration = 1000
+                    imageView.animation = fadeIn
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        withContext(Dispatchers.Main) {
+                            val hud = KProgressHUD.create(this@Home)
+                                .setCustomView(imageView)
+                                .setLabel(getString(R.string.doc_export_success))
+                                .show()
+                            delay(2000)
+                            hud.dismiss()
+
+                        }
+                    }
+
+
+                }
+
+                else -> {}
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("from", "themeChange")
+    }
+
+    fun profile() {
+        if (AppPrefs.userEmailAddress.isNullOrEmpty() && AppPrefs.userEmailAddress.equals(
+                "",
+                ignoreCase = true
+            )
+        ) {
+            Log.e(TAG, "profileif:${AppPrefs.userEmailAddress} ")
+            Log.e(TAG, "profileGoogle:${Constant.isGoogle} ")
+            welcome!!.text = resources.getString(R.string.welcome)
+            login!!.visibility = View.VISIBLE
+            tvLogout!!.visibility = View.GONE
+            imageLoader!!.loadImage(account_image!!, "google", "Fill")
+        } else {
+            val isGoogle1 = sp!!.getBoolean("isGoogle", false)
+            if (!isGoogle1) {
+                Log.e(TAG, "profileif:${AppPrefs.userEmailAddress} ")
+                Log.e(TAG, "profileGoogle:${sp!!.getBoolean("isGoogle", false)} ")
+                welcome!!.text = resources.getString(R.string.welcome)
+                login!!.visibility = View.VISIBLE
+                tvLogout!!.visibility = View.GONE
+                imageLoader!!.loadImage(account_image!!, "google", "Fill")
+            } else {
+                // android 5 Log.e(TAG, "profile:${Constant.userEmailAddress} ")
+                Log.e(TAG, "profile:${AppPrefs.userEmailAddress} ")
+                Log.e(TAG, "profileGoogle:${sp!!.getBoolean("isGoogle", false)} ")
+                welcome!!.text = AppPrefs.userEmailAddress// android 5 Constant.userEmailAddress
+                login!!.visibility = View.GONE
+                tvLogout!!.visibility = View.VISIBLE
+                // android 5 imageLoader!!.loadImage(account_image!!, null, Constant.userEmailAddress, 60)
+                imageLoader!!.loadImage(account_image!!, null, AppPrefs.userEmailAddress, 60)
+            }
+
+        }
+        /*if (Constant.userEmailAddress != null && !Constant.isGoogle) if (Constant.userEmailAddress.equals(
+                "",
+                ignoreCase = true
+            ) && !Constant.isGoogle
+        ) {
+            Log.e("TAG", "profileif:${Constant.userEmailAddress} ")
+            Log.e("TAG", "profileGoogle:${Constant.isGoogle} ")
+            welcome!!.text = resources.getString(R.string.welcome)
+            login!!.visibility = View.VISIBLE
+            tvLogout!!.visibility = View.GONE
+            imageLoader!!.loadImage(account_image!!, "google", "Fill")
+        } else {
+            Log.e("TAG", "profile:${Constant.userEmailAddress} ")
+            welcome!!.text = Constant.userEmailAddress
+            login!!.visibility = View.GONE
+            tvLogout!!.visibility = View.VISIBLE
+            imageLoader!!.loadImage(account_image!!, null, Constant.userEmailAddress, 60)
+        }*/
+    }
+
+    val statusBarHeight: Int
+        get() {
+            var result = 0
+            val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resourceId > 0) {
+                result = resources.getDimensionPixelSize(resourceId)
+            }
+            return result
+        }
+
+    private fun FillDrawer() {
+        mNavItems!!.clear()
+        tvVersion?.text = "v" + BuildConfig.VERSION_NAME
+        cvEmailVerification!!.visibility =
+            if (AppPrefs.isEmailVerified == 1) View.GONE else View.VISIBLE
+
+        if (cvEmailVerification!!.visibility == View.GONE) {
+            cvTryFillUnlimited!!.visibility = if (AppPrefs.isSubscribed.equals(
+                    "1",
+                    ignoreCase = true
+                )
+            ) View.GONE else View.VISIBLE
+        } else {
+            cvTryFillUnlimited!!.visibility = View.GONE
+        }
+        if (AppPrefs.isFreeTrialUsed == "0") {
+            tvTryForFreeSubtitle!!.setText(R.string.get_started_for_free)
+        } else {
+            tvTryForFreeSubtitle!!.setText(R.string.get_started)
+        }
+        if (cvEmailVerification!!.visibility == View.VISIBLE || cvTryFillUnlimited!!.visibility == View.VISIBLE) {
+            if (AppPrefs.UserCredits.toInt() > 0) {
+                divider!!.visibility = View.VISIBLE
+            } else {
+                divider!!.visibility = View.VISIBLE
+            }
+        } else {
+            divider!!.visibility = View.GONE
+        }
+        val isShow =
+            cvEmailVerification!!.visibility == View.VISIBLE || cvTryFillUnlimited!!.visibility == View.VISIBLE
+        divider_f.visibleIf(isShow && layFreeTrial!!.isVisible)
+        if (!isShow && !divider!!.isVisible && layFreeTrial!!.isVisible) {
+            divider?.visible()
+        }
+        if (AppPrefs.UserCredits.toInt() > 0) {
+            mNavItems?.add(
+                NavItem(
+                    resources.getString(R.string.credits),
+                    "",
+                    R.mipmap.coin,
+                    true,
+                    true,
+                    AppPrefs.UserCredits
+                )
+            )
+        }
+        val fillLabel =
+            if (AppPrefs.isFreeTrialMode == 1 || AppPrefs.isTrialExpired == 1) getString(R.string.fill_trial) else getString(
+                R.string.fill_unlimited
+            )
+        val fillIcon =
+            if (AppPrefs.isFreeTrialMode == 1 || AppPrefs.isTrialExpired == 1) R.drawable.icon_free_trial else R.drawable.ic_unlimited_colored
+        if (!AppPrefs.purchaseStatus.isEmpty()) {
+
+            Log.e(TAG, "FillDrawer() 1 ")
+            mNavItems?.add(
+                NavItem(
+                    fillLabel,
+                    capitalizeString(AppPrefs.purchaseStatus),
+                    fillIcon,
+                    false,
+                    false,
+                    "0"
+                )
+            )
+
+        } else {
+            Log.e("Purchase", "AppPrefs.purchaseStatus " + AppPrefs.purchaseStatus + "<<")
+
+            if (AppPrefs.isFreeTrialUsed == "0") {
+
+                Log.e(TAG, "FillDrawer() 2 ")
+                mNavItems?.add(
+                    NavItem(
+                        fillLabel,
+                        getString(R.string.get_free_trial),
+                        fillIcon,
+                        false,
+                        false,
+                        "0"
+                    )
+                )
+            } else {
+                Log.e(TAG, "FillDrawer() 3 ")
+                mNavItems?.add(
+                    NavItem(
+                        getString(R.string.fill_unlimited),
+                        getString(R.string.get_started),
+                        R.drawable.ic_unlimited_colored,
+                        false,
+                        false,
+                        "0"
+                    )
+                )
+            }
+        }
+        mNavItems?.add(
+            NavItem(
+                resources.getString(R.string.details),
+                "",
+                R.mipmap.detailicn,
+                false,
+                false,
+                "0"
+            )
+        )
+        mNavItems?.add(
+            NavItem(
+                resources.getString(R.string.signature),
+                "",
+                R.mipmap.signatureicn,
+                false,
+                false,
+                "0"
+            )
+        )
+        mNavItems?.add(
+            NavItem(
+                resources.getString(R.string.datefr),
+                "",
+                R.mipmap.dateformaticn,
+                false,
+                true,
+                "0"
+            )
+        )
+        mNavItems?.add(
+            NavItem(
+                resources.getString(R.string.contactus),
+                "",
+                R.mipmap.contactus,
+                false,
+                AppPrefs.isSubscribed == "1",
+                "0"
+            )
+        )
+        if (AppPrefs.isSubscribed == "0") {
+            mNavItems?.add(
+                NavItem(
+                    resources.getString(R.string.restore),
+                    "",
+                    R.drawable.ic_restore,
+                    false,
+                    true,
+                    "0"
+                )
+            )
+        }
+        mNavItems?.add(
+            NavItem(
+                resources.getString(R.string.about),
+                "",
+                R.drawable.ic_info,
+                false,
+                true,
+                "0"
+            )
+        )
+    }
+
+    private fun changeActionBar(isHome: Boolean) {
+        toggle?.drawerArrowDrawable?.color = colorWhite
+        toolbar?.setBackgroundColor(colorPrimary)
+        toolbar?.setTitleTextColor(colorWhite)
+        window.statusBarColor = colorPrimary
+        if (!isHome) {
+            toggle?.syncState()
+        }
+    }
+
+    override fun onItemClick(parent: AdapterView<*>?, view: View, position: Int, id: Long) {
+        lifecycleScope.launch {
+            // This is to prevent double click
+            drawer?.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
+            delay(1000)
+        }
+        drawer!!.closeDrawer(GravityCompat.START)
+        val array_position = position - 1
+        if (mNavItems!![array_position].mTitle.equals(
+                resources.getString(R.string.details),
+                ignoreCase = true
+            )
+        ) {
+            if (SystemClock.elapsedRealtime() - mLastClickTime > 1200) {
+                mLastClickTime = SystemClock.elapsedRealtime()
+                if (AppPrefs.userEmailAddress != null) if (AppPrefs.userEmailAddress.equals(
+                        "",
+                        ignoreCase = true
+                    )
+                ) {
+
+//                    startActivityForResult(LoginActivity.getActivityIntent(this@Home), 110)
+                    getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                    overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                } else {
+                    settitle(resources.getString(R.string.detailfr))
+                    drawerType = DrawerType.MyDetails
+                }
+            }
+        } else if (mNavItems!![array_position].mTitle.equals(
+                resources.getString(R.string.signature),
+                ignoreCase = true
+            )
+        ) {
+            if (SystemClock.elapsedRealtime() - mLastClickTime > 1200) {
+                mLastClickTime = SystemClock.elapsedRealtime()
+//                startActivity()
+                mySignatureLauncher.launch(Intent(this, ManageSignatureActivity::class.java))
+//                Handler(Looper.getMainLooper()).postDelayed({
+//                    val fragmentManager = supportFragmentManager
+//                    fragmentManager.popBackStackImmediate(
+//                        null,
+//                        FragmentManager.POP_BACK_STACK_INCLUSIVE
+//                    )
+//                    fragmentManager.beginTransaction()
+//                        .replace(R.id.main_container, SignatureFragment.newInstance { isEdit ->
+//
+//                            isSignatureEdit = isEdit
+//                        })
+//                        .addToBackStack(null)
+//                        .commit()
+//                }, 300)
+            }
+        } else if (mNavItems!![array_position].mTitle.equals(
+                resources.getString(R.string.datefr),
+                ignoreCase = true
+            )
+        ) {
+            settitle(resources.getString(R.string.datefr))
+            drawerType = DrawerType.DateFormat
+        } else if (mNavItems!![array_position].mTitle.equals(
+                resources.getString(R.string.contactus),
+                ignoreCase = true
+            )
+        ) {
+            if (SystemClock.elapsedRealtime() - mLastClickTime > 1200) {
+                mLastClickTime = SystemClock.elapsedRealtime()
+                ApplicationController.addAdjustEvent(Constant.AdjustEvent.ClickOnContacUs.event)
+                //initializeBillingClient(2)
+//            commonFunction?.SendMail(this, "",2)
+//            ContactUsFlow().show(supportFragmentManager,"Data")
+                resultLauncher.launch(ContactUsActivity.newInstance(this))
+//            ContactUsBottomSheet().show(supportFragmentManager,"asd")
+            }
+        } else if (mNavItems?.getOrNull(array_position)?.mTitle.equals(
+                getString(R.string.fill_unlimited),
+                ignoreCase = true
+            ) || mNavItems?.getOrNull(array_position)?.mTitle.equals(
+                getString(R.string.fill_trial),
+                ignoreCase = true
+            )
+        ) {
+            if (AppPrefs.isSubscribed == "0") {
+                // add adjust event Hear
+                ApplicationController.addAdjustEvent(Constant.AdjustEvent.ClickOnTryFillUnlimited.event)
+                openForPurchase()
+            } else {
+                // move to cancel subscriptions
+                try {
+                    if (AppPrefs.purchaseStatus.equals(
+                            Constant.SubscriptionState.ACTIVE.tostring,
+                            true
+                        ) || AppPrefs.purchaseStatus.equals(
+                            Constant.SubscriptionState.SUSPENDED.tostring,
+                            true
+                        )
+                    ) {
+
+                        if (SystemClock.elapsedRealtime() - mLastClickTime > 1200) {
+                            mLastClickTime = SystemClock.elapsedRealtime()
+
+                            val fillLabel =
+                                if (AppPrefs.isFreeTrialMode == 1 || AppPrefs.isTrialExpired == 1) getString(
+                                    R.string.fill_trial
+                                ) else getString(R.string.fill_unlimited)
+
+                            Utils.showAlertCancellationDialog(
+                                this@Home,
+                                fillLabel,
+                                getString(R.string.str_subscriptionIsActive),
+                                getString(R.string.str_options),
+
+                                { dialog, which ->
+
+                                    dialog.dismiss()
+                                    Utils.showAlertCancellationDialog(
+                                        this@Home,
+                                        getString(R.string.app_name),
+                                        getString(R.string.cancel_plan_description),
+                                        getString(R.string.req_cancellation),
+
+                                        { dialog, which ->
+
+                                            dialog.dismiss()
+                                            initializeBillingClient(3)
+                                        }
+
+                                    ) { dialog, which -> dialog.dismiss() }
+                                }
+                            ) { dialog, which -> dialog.dismiss() }
+                        }
+                    }
+
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (mNavItems?.getOrNull(array_position)?.mTitle.equals(
+                resources.getString(R.string.restore),
+                ignoreCase = true
+            )
+        ) {
+            ApplicationController.addAdjustEvent(Constant.AdjustEvent.ClickOnRestore.event)
+
+            initializeBillingClient(1)
+        } else if (mNavItems!![array_position].mTitle.equals(
+                resources.getString(R.string.about),
+                ignoreCase = true
+            )
+        ) {
+            val fragmentManager = supportFragmentManager
+            fragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+            fragmentManager.beginTransaction()
+                .replace(R.id.main_container, AboutFragment.newInstance())
+                .addToBackStack(null)
+                .commit()
+        }
+    }
+
+    private fun initializeBillingClient(action: Int) {
+        billingClient = BillingClient.newBuilder(this).enablePendingPurchases()
+            .setListener { billingResult: BillingResult?, list: List<Purchase?>? -> }
+            .build()
+        billingClient?.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(billingResult: BillingResult) {
+                if (action == 1) {
+                    findForSubscription()
+                }/* else if (action == 2) {
+                    findPurchaseToken(action)
+                }*/ else if (action == 3) {
+                    findPurchaseToken(action)
+                }
+            }
+
+            override fun onBillingServiceDisconnected() {}
+        })
+    }
+
+    private fun findForSubscription() {
+        //  val result= billingClient?.queryPurchasesAsync(BillingClient.SkuType.SUBS)
+
+        billingClient?.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+        ) { billingResult, purchaseList ->
+            // Process the result
+            if (purchaseList != null && purchaseList.size > 0) {
+                val purchase = purchaseList[0]
+                val purchaseToken = purchase.purchaseToken
+                val orderId = purchase.orderId
+                val originalJson = purchase.originalJson
+                val sku = purchase.products[0]
+                callRestoreApi(purchaseToken, orderId, sku, originalJson)
+            } else {
+                Log.d("Home", "findForSubscription: Nothing in purchase")
+                lifecycleScope.launch(Dispatchers.Main) {
+//                    delay(250)
+                    Utils.showAlertDialog(
+                        this@Home,
+                        getString(R.string.oops),
+                        getString(R.string.message_restore_purchase)
+                    )
+                }
+
+            }
+        }
+        // val purchases = result?.purchasesList
+
+    }
+
+    private fun findPurchaseToken(action: Int) {
+        //val result: PurchasesResult? = billingClient?.queryPurchases(BillingClient.SkuType.SUBS)
+        billingClient?.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+        ) { billingResult, purchaseList ->
+            var purchaseToken: String? = null
+            val purchases = purchaseList
+            if (purchases != null && purchases.size > 0) {
+                val purchase = purchases[0]
+                purchaseToken = purchase.purchaseToken
+//                commonFunction?.SendMail(this, purchaseToken,action
+//                )
+            } else {
+//                commonFunction?.SendMail(this, "",action)
+
+                Log.d("Home", "findPurchaseToken: No Product Found")
+            }
+            if (action == 3) {
+                resultLauncher.launch(
+                    ContactUsActivity.newInstance(
+                        this,
+                        SupportSubjectType.CancellationRequest,
+                        purchaseToken
+                    )
+                )
+            } else if (action == 1) {
+                resultLauncher.launch(ContactUsActivity.newInstance(this, null, purchaseToken))
+            }
+        }
+    }
+
+    private fun callRestoreApi(
+        purchaseToken: String,
+        orderId: String?,
+        sku: String,
+        originalJson: String
+    ) {
+        val bytedata = originalJson.toByteArray(StandardCharsets.UTF_8)
+        val base64ReceiptData = Base64.encodeToString(bytedata, Base64.URL_SAFE).replace("/", "_")
+            .replace("=", ",").replace("+", "-").replace("\n", "")
+        val url = ReleaseConstant.MainUrl_v2 + ReleaseConstant.restoreSubscription
+        val param = HashMap<String, String>()
+        param["purchaseToken"] = purchaseToken
+        param["transactionId"] = orderId ?: ""
+        param["productName"] = sku
+        param["receiptData"] = base64ReceiptData
+        requestListener!!.makeRequestWithHeader(Constant.Post, url, param, 106)
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        try {
+            menu.findItem(R.id.img_restore).isVisible = false
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main, menu) //Menu Resource, Menu
+        return true
+    }
+
+    override fun onClick(v: View) {
+        if (v === login || v === account_image) {
+            if (SystemClock.elapsedRealtime() - mLastClickTime > 1200) {
+                mLastClickTime = SystemClock.elapsedRealtime()
+                if (sp == null) {
+                    sp = PreferenceManager.getDefaultSharedPreferences(this)
+                }
+
+                IsLoggedin = sp?.getBoolean("isLogin", false) ?: false
+
+                lifecycleScope.launch {
+                    val isConnected = isInternetAvailable()
+
+                    if (isConnected) {
+                        if (!IsLoggedin) {
+                            drawer?.closeDrawer(GravityCompat.START)
+//                            startActivityForResult(LoginActivity.getActivityIntent(this@Home), 110)
+                            getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                            overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                        } else {
+                            if (login?.isVisible == true) {
+                                val editor = sp?.edit()
+                                editor?.putBoolean("isLogin", false)
+                                editor?.apply()
+                                editor?.commit()
+                                logoutUser()
+                                login?.performClick()
+                            }
+                        }
+                    } else {
+                        Utils.showinterneterror(this@Home)
+                    }
+                }
+            }
+        } else if (v === cvTryFillUnlimited) {
+            openForPurchase()
+            drawer!!.closeDrawer(GravityCompat.START)
+            // add adjust event Hear
+            ApplicationController.addAdjustEvent(Constant.AdjustEvent.ClickOnTryFillUnlimited.event)
+        } else if (v === tvLogout) {
+            drawer!!.closeDrawer(GravityCompat.START)
+            Utils.confirmationAlertDialog(
+                this@Home, getString(R.string.logout_confirm_msg)
+            ) { dialog: DialogInterface?, which: Int ->
+                HomeFragment.fragment?.showLoadingView()
+                logoutUser()
+            }
+        } else if (v === cvEmailVerification) {
+            drawer!!.closeDrawer(GravityCompat.START)
+            CommonAPI.resendEmailVerification(this)
+        } else if (v === tv_free_unlimited) {//////////////////////////////////////////////////////////////////////////////////
+            Log.e(TAG, "onClickButtion: ")
+            drawer!!.closeDrawer(GravityCompat.START)
+            if (SystemClock.elapsedRealtime() - lastTimeSyncFile < 1000) {
+                return
+            } else {
+                lastTimeSyncFile = SystemClock.elapsedRealtime()
+                val intent = Intent(this@Home, OnBoardingPurchaseScreen::class.java)
+                purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                drawer!!.closeDrawer(GravityCompat.START)
+            }
+
+        } else if (v === tv_remainDoc) {
+            drawer!!.closeDrawer(GravityCompat.START)
+            Utils.showAlertCancellationDialog(
+                this@Home,
+                getString(R.string.free_tag),
+                getString(R.string.free_desc),
+                getString(R.string.activate),
+                { dialog, which ->
+                    dialog.dismiss()
+                //    val intent = Intent(this@Home, OnBoardingPurchaseScreen::class.java)
+                  //  startActivityForResult(intent, 123)
+                    purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                    overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                }
+
+            ) { dialog, which -> dialog.dismiss() }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onTaskComplete(response: String, int_task_type: Int) {
+        if (int_task_type == 101) {
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                var J: JSONObject? = null
+                try {
+                    J = JSONObject(response)
+                    val status = J.getInt("status")
+                    if (status == 1) {
+                        showlogindialog = true
+                        val jsonArray = J.getJSONArray("data")
+                        val jsonObject = jsonArray.getJSONObject(0)
+                        AppPrefs.UserCredits = jsonObject.getString("credits")
+                        AppPrefs.isFreeTrialUsed = jsonObject.getString("isFreeTrialUsed")
+                        AppPrefs.isSubscribed = jsonObject.getString("isSubscribed")
+                        AppPrefs.GUID = jsonObject.getString("userId")
+                        AppPrefs.purchaseStatus = jsonObject.getString("status")
+                        AppPrefs.forceLogin = jsonObject.getInt("forceLogin")
+                        AppPrefs.isEmailVerified = jsonObject.getInt("isEmailVerified")
+                        AppPrefs.firstName = jsonObject.getString("firstName")
+                        AppPrefs.lastName = jsonObject.getString("lastName")
+                        Constant.planDuration = jsonObject.getString("planDuration")
+                        Constant.expiredPlanDuration = jsonObject.getString("expiredPlanDuration")
+                        Constant.isRegistered = jsonObject.getString("isRegistered")
+                        Log.e(
+                            "INSIDE",
+                            "callGetCredit 1" + AppPrefs.isFreeTrialMode + "<<" + AppPrefs.isFreeTrialUsed + "<<" + AppPrefs.isTrialExpired
+                        )
+                        Log.e(
+                            "INSIDE",
+                            "callGetCredit 1" + (AppPrefs.isFreeTrialMode == AppPrefs.isFreeTrialUsed.toInt())
+                        )
+
+
+//                        AppPrefs.userEmailAddress = Constant.userEmailAddress
+                        val e1 = sp!!.edit()
+                        e1.putString("token_id", jsonObject.getString("tokenId"))
+                        e1.putString("user_id", AppPrefs.GUID)
+//                        e1.putString("Email", Constant.userEmailAddress)
+                        e1.putString("loginType", AppPrefs.loginType)
+                        e1.putString("user_credits", AppPrefs.UserCredits)
+                        e1.putString("isSubscribed", AppPrefs.isSubscribed)
+                        e1.putString("isFreeTrialUsed", AppPrefs.isFreeTrialUsed)
+                        e1.putString("purchaseStatus", AppPrefs.purchaseStatus)
+
+                        if (AppPrefs.isFromlogin ) {
+                            e1.putBoolean("isLogin", true)
+                        }
+                        e1.apply()
+
+                        commonFunction!!.scheduleOrCancelAlarms(this, sp)
+
+                        ApplicationController.isSubscribed.postValue(AppPrefs.isSubscribed)
+
+                        if (AppPrefs.isFromlogin ) {
+                            AppPrefs.isFromlogin = false
+//                            e1.putBoolean("isLogin", true)
+//                            e1.apply()
+
+                            val e1 = sp!!.edit()
+                            e1.putBoolean("isGoogle", true)
+                            e1.apply()
+//                            Constant.isGoogle = true
+
+                            lifecycleScope.launch(Dispatchers.Main) {
+
+                                if (AppPrefs.isSubscribed.equals(
+                                        "0",
+                                        true
+                                    ) && !AppPrefs.loginType.equals("google", true)
+                                ) {
+//                                    val intent =
+//                                        Intent(this@Home, OnBoardingPurchaseScreen::class.java)
+                                    //startActivityForResult(intent,123)
+                                    purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                                    overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                                }
+                            }
+
+                            if (AppPrefs.loginType == "google") {
+                                Log.e(
+                                    "INSIDE",
+                                    "callGetCredit @@" + AppPrefs.isSubscribed + "<<" + AppPrefs.loginType + "<<" + AppPrefs.isFromlogin 
+                                )
+
+                                /*       if (Constant.isRegistered.equals("0",true) && AppPrefs.isSubscribed.equals("0",true) && AppPrefs.loginType.equals("google",true)) {
+                                           val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+                                           startActivity(intent)
+                                           overridePendingTransition(R.anim.rtf, 0)
+                                       }*/
+                                if (AppPrefs.isSubscribed.equals("0", true)) {
+                                   // val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+                                   // startActivityForResult(intent, 123)
+                                    purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                                    overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+                                }
+
+                                callGetCredit()
+                            }
+                            ApiConst.updateStep(-2)
+                            HomeFragment.fragment?.fetchDocListFromServer()
+                            callDownloadSignatureApi()
+                        }
+
+                        FillDrawer()
+                        getCreditList()
+
+                    } else {
+                        showlogindialog = false
+                        // android 5 Constant.userEmailAddress = ""
+                        AppPrefs.tokenId = ""
+                        AppPrefs.userEmailAddress = ""
+                        val e1 = sp!!.edit()
+                        e1.putString("Email", "")
+                        e1.putString("token_id", "")
+                        AppPrefs.isFromlogin = false
+                        e1.putBoolean("isLogin", false)
+                        e1.apply()
+                        val `object` = J.getJSONObject("message")
+                        val title = `object`.getString("title")
+                        val desc = `object`.getString("desc")
+                        alertSubDialog(title, desc)
+                    }
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (int_task_type == 102) {
+
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                var J: JSONObject? = null
+                try {
+                    val products: MutableList<Subscription> = ArrayList()
+                    J = JSONObject(response)
+                    val status = J.getInt("status")
+                    if (status == 1) {
+                        val jsonObject = J.getJSONObject("data")
+                        val jsonObject1 = jsonObject.getJSONObject("products")
+                        if (jsonObject1.has("subscriptions")) {
+                            val jsonArray = jsonObject1.getJSONArray("subscriptions")
+                            for (i in 0 until jsonArray.length()) {
+                                val `object` = jsonArray.getJSONObject(i)
+                                val subscription = Subscription(
+                                    id = `object`.getString("name"),
+                                    price = `object`.getString("amount"),
+                                    duration = `object`.getString("duration")
+                                )
+                                products.add(subscription)
+                            }
+                        }
+                        subscriptions = products
+                    }
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (int_task_type == 2525) {
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                try {
+                    val rootObject = JSONObject(response)
+                    val status = rootObject.getInt("status")
+                    if (rootObject.has("data")){
+                        val data = rootObject.getJSONObject("data")?: return
+                        val isEvent = data.getInt("isEvent")
+                        val productName = data.getString("productName")
+                        if (status == 1 && isEvent == 1) {
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                if (productName.equals(FT_TO_PAID_14, true)) {
+                                    ApplicationController.addFirebaseEventFtToPaid(Constant.ANALYTICS_MONTHLY_FT_TO_PAID_14)
+                                } else if (productName.equals(FT_TO_PAID_79, true)) {
+                                    ApplicationController.addFirebaseEventFtToPaid(Constant.ANALYTICS_YEARLY_FT_TO_PAID_79)
+                                } else if (productName.equals(FT_TO_PAID_99, true)) {
+                                    ApplicationController.addFirebaseEventFtToPaid(Constant.ANALYTICS_YEARLY_FT_TO_PAID_99)
+                                } else if (productName.equals(FT_TO_PAID_119, true)) {
+                                    ApplicationController.addFirebaseEventFtToPaid(Constant.ANALYTICS_YEARLY_FT_TO_PAID_119)
+                                }
+
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    updateGaTracking()
+                                },10000)
+                            }
+
+//                        if (productName.contains("trial_7_01", true)) {
+//                            ApplicationController.addFirebaseEvent(Constant.ANALYTICS_MONTHLY_FT_TO_PAID)
+//                        } else {
+//                            ApplicationController.addFirebaseEvent(Constant.ANALYTICS_YEARLY_FT_TO_PAID)
+//                        }
+                        }
+                    }
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (int_task_type == 2526) {
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                try {
+                    val rootObject = JSONObject(response)
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (int_task_type == 103) {
+            if (response.equals("error", ignoreCase = true)) {
+//                Utils.showinterneterror(this);
+                OutDated = false
+            } else {
+                var jsonObject: JSONObject? = null
+                try {
+                    jsonObject = JSONObject(response)
+                    val status = jsonObject.getString("status")
+                    if (status.equals("1", ignoreCase = true)) {
+                        val data = jsonObject.getJSONArray("data")
+                        for (i in 0 until data.length()) {
+                            val object_credit = data.getJSONObject(i)
+                            CurrentMarketVersion = object_credit.getString("version").toInt()
+                            CurrentMarketVersionName = object_credit.getString("build")
+                            NEW = object_credit.getString("new")
+                            FIX = object_credit.getString("fix")
+                        }
+                        OutDated = true
+                    } else {
+                        OutDated = false
+                    }
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                    OutDated = false
+                }
+                if (OutDated) {
+                    val message = """${resources.getString(R.string.fixed)} $FIX
+${resources.getString(R.string.new_update2)} $NEW"""
+                    AlertShow_update(message)
+                }
+            }
+        } else if (int_task_type == 105) {
+
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+                HomeFragment.fragment?.hideUploadStatus()
+                AppPrefs.isLogoutApicalling = false
+            } else {
+                try {
+                    checkFreeTrial()
+                    AppPrefs.isDocUploading = false
+                    HomeFragment?.isDocListLoading = false
+//                    Constant.isGoogle = false
+                    val e1 = sp!!.edit()
+                    e1.putBoolean("isGoogle", false)
+                    e1.apply()
+                    val rootObject = JSONObject(response)
+                    val status = rootObject.getInt("status")
+                    val messageObject = rootObject.getJSONObject("message")
+                    if (status == 1) {
+                        ApplicationController.instance?.requestQueue?.cancelAll(
+                            ApplicationController.TAG
+                        )
+                        Constant.manageDetailList.clear()
+                        var tagListOthers = ArrayList<String>()
+                        Utils.fillCategoryApi(
+                            this@Home,
+                            fname = "",
+                            lname = "",
+                            stone = "",
+                            sttwo = "",
+                            city = "",
+                            state = "",
+                            country = "",
+                            email = "",
+                            phone = "",
+                            zipcode = "",
+                            bdate = "",
+                            others = tagListOthers
+                        )
+                        AllFragment?.apply {
+                            if (!AppPrefs.isSubscribed.equals("1", ignoreCase = true)) {
+
+                                Log.e(TAG, "105 here come ")
+                                banner?.visible()
+
+                            } else {
+                                Log.e(TAG, "105 here come not")
+                                banner?.gone()
+                            }
+                            // banner?.visible()
+                            freeTrial?.text = getString(R.string.tryitfree)
+                        }
+                        DoneFragment.apply {
+                            if (!AppPrefs.isSubscribed.equals("1", true)) {
+                                bannerDone?.visible()
+                            } else {
+                                bannerDone?.gone()
+                            }
+                            freeTrialDone?.text = getString(R.string.tryitfree)
+                        }
+                        RecentFragment.apply {
+                            if (!AppPrefs.isSubscribed.equals("1", true)) {
+                                bannerRecent?.visible()
+                            } else {
+                                bannerRecent?.gone()
+                            }
+                            freeTrialRecent?.text = getString(R.string.tryitfree)
+                        }
+                        ExportedFragment.apply {
+                            if (!AppPrefs.isSubscribed.equals("1", true)) {
+                                bannerExport?.visible()
+                            } else {
+                                bannerExport?.gone()
+                            }
+                            freeTrialExport?.text = getString(R.string.tryitfree)
+                        }
+                        Constant.orderofcategory.clear()
+                        AppPrefs.GUID = AppPrefs.secure_id
+                        // android 5 Constant.userEmailAddress = ""
+                        AppPrefs.isEmailVerified = 1
+                        AppPrefs.tokenId = ""
+                        AppPrefs.loginType = ""
+                        AppPrefs.isForceLoginFillYourSelf = false
+                        AppPrefs.userEmailAddress = ""
+                        AppPrefs.isLogin = false
+                        val e1 = sp!!.edit()
+                        e1.putString("user_id", AppPrefs.GUID)
+                        e1.putString("user_credits", AppPrefs.UserCredits)
+                        e1.putString("Email", "")
+                        e1.putString("token_id", "")
+                        e1.putString("loginType", "")
+                        e1.putBoolean("isLogin", false)
+
+                        e1.putString("isSubscribed", "")
+                        e1.putString("isFreeTrialUsed", "")
+                        e1.putString("purchaseStatus", "")
+                        e1.apply()
+                        e1.commit()
+                        callDownloadSignatureApi()
+                        HomeFragment.fragment?.removeAllAvailableDocument(
+                            emptyList(),
+                            messageObject.getString("title"),
+                            messageObject.getString("desc")
+                        )
+//                        HomeFragment.fragment?.removeNotAvailableDocument(
+//                            emptyList(),
+//                            messageObject.getString("title"),
+//                            messageObject.getString("desc")
+//                        )
+                        callGetCredit()
+                    }
+                    AppPrefs.isLogoutApicalling = false
+                    WorkManager.getInstance(this).cancelAllWorkByTag(NotificationSchedule.workerTag)
+
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        } else if (int_task_type == 106) {
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                try {
+                    val rootObject = JSONObject(response)
+                    val status = rootObject.getInt("status")
+                    val messageObject = rootObject.getJSONObject("message")
+                    if (status == 1) {
+                        callGetCredit()
+                    }
+                    Utils.showAlertDialog(
+                        this@Home,
+                        messageObject.getString("title"),
+                        messageObject.getString("desc")
+                    )
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private fun AlertShow_update(Message: String) {
+        val builder = AlertDialog.Builder(this)
+        builder.setMessage(Message)
+            .setTitle(
+                Html.fromHtml(
+                    "<b>${this.resources.getString(R.string.updatetitle, CurrentMarketVersionName)}</b>",
+                    Html.FROM_HTML_MODE_LEGACY
+                )
+            )
+            .setCancelable(false)
+            .setPositiveButton(
+                resources.getString(R.string.updatemsg)
+            ) { dialog, id ->
+                dialog.dismiss()
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW)
+                    intent.data = Uri.parse("market://details?id=amplify.fill")
+                    startActivity(intent)
+                    finish()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        val alert = builder.create()
+        try {
+            if (!isFinishing){
+                alert.show()
+                val posBtn = alert.getButton(DialogInterface.BUTTON_POSITIVE)
+                if (posBtn != null){
+                    posBtn.textSize = 17f
+                    posBtn.isAllCaps = true
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private val mySignatureLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (it.resultCode == Activity.RESULT_OK) {
+                val fragmentManager = supportFragmentManager
+                fragmentManager.popBackStackImmediate(
+                    null,
+                    FragmentManager.POP_BACK_STACK_INCLUSIVE
+                )
+                fragmentManager.beginTransaction()
+                    .add(
+                        R.id.main_container, HomeFragment.newInstance(
+                            "",
+                            receiverEmailFromLink = receiverEmailFromLink
+                        )
+                    )
+                    .addToBackStack(null)
+                    .commit()
+            }
+        }
+    /*android 8*/
+  private  val purchaseLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+      val data = result?.data
+        if (result.resultCode == RESULT_OK ) {
+
+            Timber.tag(TAG).e("onActivityResult() 123 here ")
+            callGetCredit()
+            if (sp!!.getBoolean("isLogin", false)) {
+
+                Log.e(TAG, "onActivityResult() 123 here user login found ")
+                val title = data!!.getStringExtra("title") ?: ""
+                val desc = data.getStringExtra("desc") ?: ""
+                val isFreeTrial = data.getBooleanExtra("isFreePlan", false)
+                if (isFreeTrial) {
+
+                    Log.e(TAG, "onActivityResult() 123 here user login found isFreeTrial true  ")
+
+                    val dialog = PurchaseSuccessDialog.newInstance()
+                    dialog.setListener(object : PurchaseSuccessDialog.Listener {
+                        override fun onNext() {
+                            Log.e(TAG, "onItemClick:About Purchase  13")
+
+                            Utils.showAlertDialog(
+                                this@Home,
+                                getString(R.string.strTheTrailPlan),
+                                getString(R.string.strYouCanExport3Document)
+
+                            ) { _, _ ->
+                                commonFunction?.launchInAppReview(this@Home)
+                            }
+                        }
+                    })
+                    dialog.show(supportFragmentManager, PurchaseSuccessDialog.TAG)
+                } else {
+
+                    Log.e(TAG, "onActivityResult() 123 here user login found isFreeTrial false  ")
+//                    Utils.showAlertDialog(
+//                            this,
+//                            title,
+//                            desc
+//                    ) { _, _ ->
+//                    }
+                }
+
+            } else {
+                Timber.tag(TAG).e("onActivityResult() 123 here user not login found ")
+                val isFreeTrial = data?.getBooleanExtra("isFreePlan", false) ?: false
+                val title = data!!.getStringExtra("title") ?: ""
+                val desc = data.getStringExtra("desc") ?: ""
+                Timber.tag(TAG)
+                    .e("onActivityResult() 123 here user not login found title value " + title)
+                Timber.tag(TAG)
+                    .e("onActivityResult() 123 here user not login found desc value " + desc)
+
+                if (isFreeTrial) {
+
+                    Timber.tag(TAG)
+                        .e("onActivityResult() 123 here user not login isFreeTrial true ")
+                    val dialog = PurchaseSuccessDialog.newInstance()
+                    dialog.setListener(object : PurchaseSuccessDialog.Listener {
+                        override fun onNext() {
+                            Utils.showAlertDialog(
+                                this@Home,
+                                getString(R.string.strTheTrailPlan),
+                                getString(R.string.strYouCanExport3Document)
+
+                            ) { _, _ ->
+                                Log.e("TAG", "onItemClick:About Purchase  12")
+                                AppPrefs.launchReviewPopup = true
+//                            startActivityForResult(getActivityIntent(this@Home), 110)
+                                getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                            }
+                        }
+                    })
+                    dialog.show(supportFragmentManager, PurchaseSuccessDialog.TAG)
+                } else {
+                    Timber.tag(TAG)
+                        .e("onActivityResult() 123 here user not login isFreeTrial false ")
+                    AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow = true
+//                    startActivityForResult(getActivityIntent(this@Home), 110)
+                    getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                }
+            }
+        } else {
+            checkForPostNotificationPermission()
+        }
+}
+    /*end*/
+    val getResult_REQUEST_CODE_EXPORT_PDF =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            Timber.tag("In").e("Home- ")
+            HomeFragment.fragment?.hideLoadingView()
+            val data = result?.data
+            if (AppPrefs.isForceLoginFillYourSelf) {
+                HomeFragment.fragment?.onResume()
+                callGetCredit()
+            }
+            if (result.resultCode == Activity.RESULT_OK) {
+                val message = data?.getStringExtra(Constant.MESSAGE)
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                lifecycleScope.launch(Dispatchers.IO) {
+                    withContext(Dispatchers.Main) {
+                        val hud = KProgressHUD.create(this@Home)
+                            .setCustomView(imageView)
+                            .setLabel(message ?: getString(R.string.doc_export_success))
+                            .show()
+                        delay(2000)
+                        hud.dismiss()
+                    }
+                }
+            }
+            checkForPostNotificationPermission()
+        }
+    val getResult_REQUEST_CODE_BOOKMARKS =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val resultCode = result?.resultCode
+//        val data = result?.data
+            Timber.tag("In").e("From Bookmark- ")
+            HomeFragment.fragment?.hideLoadingView()
+            if (resultCode == Activity.RESULT_OK) {
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(getString(R.string.success_bookmark))
+                    .setDetailsLabel(getString(R.string.blank))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+                Constant.isSearch = true
+            }
+
+        }
+    val getResult_REQUEST_CODE_RMBOOKMARKS =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val resultCode = result?.resultCode
+//        val data = result?.data
+            Timber.tag("In").e("From rmBookmark- ")
+            HomeFragment.fragment?.hideLoadingView()
+            if (resultCode == RESULT_OK) {
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(getString(R.string.success_rmbookmark))
+                    .setDetailsLabel(getString(R.string.blank))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+                Constant.isSearch = true
+            }
+        }
+    val getResult_321 =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            HomeFragment.fragment?.hideLoadingView()
+            HomeFragment.fragment?.hideUploadStatus()
+            DirectExportActivity.uploading.postValue(false)
+            val data = result?.data
+            val messageTitle = data?.getStringExtra(Constant.MESSAGE_TITLE) ?: ""
+            val message = data?.getStringExtra(Constant.MESSAGE)
+            if (result.resultCode == RESULT_OK && (messageTitle.isNotEmpty() || !message.isNullOrEmpty())) {
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(message ?: messageTitle)
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+                if (AppPrefs.launchReviewPopup) {
+                    AppPrefs.launchReviewPopup = false
+                    commonFunction?.launchInAppReview(this@Home)
+                }
+            } else if (result.resultCode == Constant.RESULT_ALL_DONE) {
+            } else if (result.resultCode == Constant.RESULT_SIGN_ADDED) {
+
+                //do nothing
+            }
+            AppPrefs.isLoginReqSign = false
+            AppPrefs.isDocUploading = false
+            lifecycleScope.launch {
+                delay(1500)
+                if (AppPrefs.isTimeUpdate || AppPrefs.isTimeDraft) {
+                    AppPrefs.isTimeUpdate = false
+                    AppPrefs.isTimeDraft = false
+//                    HomeFragment.fragment?.fetchDocListFromServer()
+                    HomeFragment.fragment?.mDocumentAdapter?.mRecyclerView?.scrollToPosition(0)
+                }
+            }
+
+
+        }
+    private val getResult_LoginActivity110 =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+
+            Timber.tag("In").e("Home- ")
+            HomeFragment.fragment?.hideLoadingView()
+            val resultCode = result?.resultCode
+            val data = result?.data
+
+            if (resultCode == RESULT_OK) {
+                Timber.tag("From Home 110->" + resultCode).e(
+                    data?.extras?.getString("EXTRA_TITLE")
+                        ?: "" + "  " + data?.extras?.getString("EXTRA_MESSAGE") ?: ""
+                )
+
+                Timber.tag(TAG)
+                    .e("onActivityResult() isfreetrialused value " + AppPrefs.isFreeTrialUsed)
+
+                if (AppPrefs.isFromlogin ) {
+                    callGetCredit()
+                    checkFreeTrial()
+                }
+                if (data?.hasExtra("EXTRA_NEW_USER") == false) {
+                    HomeFragment.documentListApi = true
+                    HomeFragment.fragment?.showUploadStatus()
+                }
+
+                val msg = data?.getStringExtra("EXTRA_TITLE") ?: ""
+                Timber.tag(TAG)
+                    .e("onActivityResult() 110 false " + "msg $msg" + AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow )
+                val wait = if (AppPrefs.loginType == "google") 1200L else 10L
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (showlogindialog) {
+                        Utils.showAlertDialog(
+                            this,
+                            data?.getStringExtra("EXTRA_TITLE") ?: "",
+                            data?.getStringExtra("EXTRA_MESSAGE") ?: ""
+                        ) { dialog: DialogInterface, which: Int ->
+                            dialog.dismiss()
+                            //Login Success
+                            AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow = false
+                            if (AppPrefs.launchReviewPopup) {
+                                AppPrefs.launchReviewPopup = false
+                                commonFunction?.launchInAppReview(this@Home)
+                            }
+                            HomeFragment.fragment!!.fetchDocListFromServer()
+                        }
+                    }
+                }, wait)
+                checkForPostNotificationPermission()
+            } else {
+                checkFreeTrial()
+                HomeFragment.fragment?.hideUploadStatus()
+                if (AppPrefs.launchReviewPopup) {
+                    AppPrefs.launchReviewPopup = false
+                    commonFunction?.launchInAppReview(this@Home)
+                }
+            }
+        }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        try {
+            for (fragment in supportFragmentManager.fragments) {
+                fragment.onActivityResult(requestCode, resultCode, data)
+                break
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Log.e(TAG, "Home-onActivityResult " + requestCode + "-- " + resultCode)
+
+        if (resultCode == RESULT_OK && requestCode == 123) {
+
+            Log.e(TAG, "onActivityResult() 123 here ")
+            callGetCredit()
+            if (sp!!.getBoolean("isLogin", false)) {
+
+                Log.e(TAG, "onActivityResult() 123 here user login found ")
+                val title = data!!.getStringExtra("title") ?: ""
+                val desc = data.getStringExtra("desc") ?: ""
+                val isFreeTrial = data.getBooleanExtra("isFreePlan", false)
+                if (isFreeTrial) {
+
+                    Log.e(TAG, "onActivityResult() 123 here user login found isFreeTrial true  ")
+
+                    val dialog = PurchaseSuccessDialog.newInstance()
+                    dialog.setListener(object : PurchaseSuccessDialog.Listener {
+                        override fun onNext() {
+                            Log.e(TAG, "onItemClick:About Purchase  13")
+
+                            Utils.showAlertDialog(
+                                this@Home,
+                                getString(R.string.strTheTrailPlan),
+                                getString(R.string.strYouCanExport3Document)
+
+                            ) { _, _ ->
+                                commonFunction?.launchInAppReview(this@Home)
+                            }
+                        }
+                    })
+                    dialog.show(supportFragmentManager, PurchaseSuccessDialog.TAG)
+                } else {
+
+                    Log.e(TAG, "onActivityResult() 123 here user login found isFreeTrial false  ")
+//                    Utils.showAlertDialog(
+//                            this,
+//                            title,
+//                            desc
+//                    ) { _, _ ->
+//                    }
+                }
+
+            } else {
+                Log.e(TAG, "onActivityResult() 123 here user not login found ")
+                val isFreeTrial = data?.getBooleanExtra("isFreePlan", false) ?: false
+                val title = data!!.getStringExtra("title") ?: ""
+                val desc = data.getStringExtra("desc") ?: ""
+                Log.e(TAG, "onActivityResult() 123 here user not login found title value " + title)
+                Log.e(TAG, "onActivityResult() 123 here user not login found desc value " + desc)
+
+                if (isFreeTrial) {
+
+                    Log.e(TAG, "onActivityResult() 123 here user not login isFreeTrial true ")
+                    val dialog = PurchaseSuccessDialog.newInstance()
+                    dialog.setListener(object : PurchaseSuccessDialog.Listener {
+                        override fun onNext() {
+                            Utils.showAlertDialog(
+                                this@Home,
+                                getString(R.string.strTheTrailPlan),
+                                getString(R.string.strYouCanExport3Document)
+
+                            ) { _, _ ->
+                                Log.e("TAG", "onItemClick:About Purchase  12")
+                                AppPrefs.launchReviewPopup = true
+//                            startActivityForResult(getActivityIntent(this@Home), 110)
+                                getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                            }
+                        }
+                    })
+                    dialog.show(supportFragmentManager, PurchaseSuccessDialog.TAG)
+                } else {
+                    Log.e(TAG, "onActivityResult() 123 here user not login isFreeTrial false ")
+                    AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow = true
+//                    startActivityForResult(getActivityIntent(this@Home), 110)
+                    getResult_LoginActivity110.launch(getActivityIntent(this@Home))
+                }
+            }
+        } else {
+            if (requestCode != Constant.REQUEST_CODE_RMBOOKMARKS && requestCode != Constant.REQUEST_CODE_BOOKMARKS && requestCode != 321) {
+                checkForPostNotificationPermission()
+            }
+        }
+        if (requestCode == 123 && resultCode != RESULT_OK) {
+//            if (HomeFragment.documentListApi)
+//                HomeFragment.fragment?.hideLoadingView()
+        }
+
+        /*
+        if(resultCode== Activity.RESULT_OK && requestCode== 144){
+            Log.e("in","APP START CLICK ")
+            val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+            startActivityForResult(intent, 123)
+            overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+
+
+
+        }
+
+        if (requestCode == 110 && resultCode == RESULT_OK) {
+
+            Log.e("From Home 110->"+resultCode,data?.extras?.getString("EXTRA_TITLE")?:""+"  "+data?.extras?.getString("EXTRA_MESSAGE")?:"")
+
+            Log.e(TAG, "onActivityResult() isfreetrialused value "+AppPrefs.isFreeTrialUsed )
+
+            *//*       if (data!!.hasExtra("EXTRA_NEW_USER") && data!!.hasExtra("EXTRA_TITLE") && AppPrefs.isSubscribed.equals("0",true)) {
+                       val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+                       startActivity(intent)
+                       overridePendingTransition(R.anim.rtf, 0)
+                   }
+                   if (data!!.hasExtra("FROM_LOGIN") && AppPrefs.isSubscribed.equals("0",false)){
+                       val intent = Intent(this, OnBoardingPurchaseScreen::class.java)
+                       startActivity(intent)
+                       overridePendingTransition(R.anim.rtf, 0)
+                   }*//*
+
+            if (AppPrefs.isFromlogin ) {
+                callGetCredit()
+            }
+            val msg = data?.getStringExtra("EXTRA_TITLE") ?: ""
+
+            if (data!!.hasExtra("EXTRA_TITLE") && !msg.equals("Logged In",true)) {
+                Utils.showAlertDialog(
+                    this@Home,
+                    data.getStringExtra("EXTRA_TITLE") ?: "",
+                    data.getStringExtra("EXTRA_MESSAGE") ?: ""
+                ) { dialog: DialogInterface, _: Int ->
+                    dialog.dismiss()
+                    //Login Failed
+                    if (AppPrefs.launchReviewPopup) {
+                        AppPrefs.launchReviewPopup = false
+                        Utils.showAlertDialog(
+                            this@Home,
+                            getString(R.string.strTheTrailPlan),
+                            getString(R.string.strYouCanExport3Document)
+
+                        ) { _, _ ->
+                            commonFunction?.launchInAppReview(this@Home)
+                        }
+                    }
+                }
+            } else {
+                Log.e(TAG, "onActivityResult() 110 false "+AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow )
+                val wait = if (AppPrefs.loginType == "google") 1200L else 10L
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (showlogindialog){
+                        Utils.showAlertDialog(
+                            this,
+                            data.getStringExtra("EXTRA_TITLE") ?: "",
+                            data.getStringExtra("EXTRA_MESSAGE") ?: ""
+                        ) { dialog: DialogInterface, which: Int ->
+                            dialog.dismiss()
+                            //Login Success
+                            if (data!!.hasExtra("EXTRA_TITLE")
+                                && msg.equals("Logged In", true)
+                                && AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow 
+                            ) {
+                                AppPrefs.isPaidPlanPurchaseUnlimitedDialogShow = false
+                                Utils.showAlertDialog(
+                                    this@Home,
+                                    getString(R.string.strUnlimitedActivated),
+                                    getString(R.string.strYouCanNowFill)
+                                ) { _, _ ->
+                                    if (AppPrefs.launchReviewPopup) {
+                                        AppPrefs.launchReviewPopup = false
+                                        commonFunction?.launchInAppReview(this@Home)
+                                    }
+                                }
+                            } else {
+                                if (AppPrefs.launchReviewPopup) {
+                                    AppPrefs.launchReviewPopup = false
+                                    Utils.showAlertDialog(
+                                        this@Home,
+                                        getString(R.string.strTheTrailPlan),
+                                        getString(R.string.strYouCanExport3Document)
+
+                                    ) { _, _ ->
+                                        commonFunction?.launchInAppReview(this@Home)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },wait)
+            }
+        }
+        if (requestCode == Constant.REQUEST_CODE_BOOKMARKS){
+            if (resultCode == Activity.RESULT_OK){
+                Log.e("In","From Bookmark- ")
+                HomeFragment.fragment?.hideLoadingView()
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration= 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(getString(R.string.success_bookmark))
+                    .setDetailsLabel(getString(R.string.blank))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+                Constant.isSearch=true
+            }
+            else{
+                HomeFragment.fragment?.hideLoadingView()
+                Log.e(TAG, "onActivityResult:CANCELLED ")
+            }
+        }
+        if (requestCode == Constant.REQUEST_CODE_RMBOOKMARKS){
+            if (resultCode == RESULT_OK){
+                Log.e("In","From rmBookmark- ")
+                HomeFragment.fragment?.hideLoadingView()
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(getString(R.string.success_rmbookmark))
+                    .setDetailsLabel(getString(R.string.blank))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+                Constant.isSearch=true
+            }
+            else{
+                HomeFragment.fragment?.hideLoadingView()
+                Log.e(TAG, "onActivityResult:CANCELLED ")
+            }
+        }
+
+        if (requestCode == 78) {
+            HomeFragment.fragment?.hideLoadingView()
+            val message = data?.getStringExtra(Constant.MESSAGE)
+            val imageView = ImageView(this)
+            imageView.setBackgroundResource(R.drawable.ic_right)
+            val fadeIn = AlphaAnimation(0f, 1f)
+            fadeIn.interpolator = DecelerateInterpolator() //add this
+            fadeIn.duration = 1000
+            imageView.animation = fadeIn
+            val hud = KProgressHUD.create(this@Home)
+                .setCustomView(imageView)
+                .setLabel(message ?: getString(R.string.download_doc))
+                .show()
+            Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+
+        }
+        if (requestCode == 321) {
+            HomeFragment.fragment?.hideLoadingView()
+            val messageTitle = data?.getStringExtra(Constant.MESSAGE_TITLE) ?: ""
+            val message = data?.getStringExtra(Constant.MESSAGE)
+            if (!Constant.isUpdatePdfPN && resultCode == RESULT_OK  && (messageTitle.isNotEmpty() || !message.isNullOrEmpty()) ) {
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(message ?: messageTitle)
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+            }
+            else if (resultCode == Constant.RESULT_ALL_DONE) {
+                *//*val message=getString(R.string.sign_successfully)
+
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(message ?: getString(R.string.document_sent))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)*//*
+
+                *//*    val allDoneActionSheet = AllDoneActionSheet.newInstance()
+                    allDoneActionSheet.show(supportFragmentManager, "AllDoneActionSheet")*//*
+            }
+            else if(resultCode==Constant.RESULT_SIGN_ADDED){
+                //do nothing
+            }
+            AppPrefs.isLoginReqSign=false
+            AppPrefs.isDocUploading =false
+        }
+
+        if (requestCode == Constant.REQUEST_CODE_EXPORT_PDF) {
+            Log.e("In","Home- ")
+            HomeFragment.fragment?.hideLoadingView()
+            if(AppPrefs.isForceLoginFillYourSelf){
+                HomeFragment.fragment?.onResume()
+                callGetCredit()
+            }
+            if (resultCode==Activity.RESULT_OK){
+                val message = data?.getStringExtra(Constant.MESSAGE)
+                val imageView = ImageView(this)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                lifecycleScope.launch(Dispatchers.IO) {
+                    withContext(Dispatchers.Main) {
+                        val hud = KProgressHUD.create(this@Home)
+                            .setCustomView(imageView)
+                            .setLabel(message ?: getString(R.string.doc_export_success))
+                            .show()
+                        delay(2000)
+                        hud.dismiss()
+                    }
+                }}
+
+        }
+        if (requestCode == Constant.REQUEST_CODE_DOWNLOAD_PDF) {
+            HomeFragment.fragment?.hideLoadingView()
+            val message = data?.getStringExtra(Constant.MESSAGE)
+            val imageView = ImageView(this)
+            imageView.setBackgroundResource(R.drawable.ic_right)
+            val fadeIn = AlphaAnimation(0f, 1f)
+            fadeIn.interpolator = DecelerateInterpolator() //add this
+            fadeIn.duration = 1000
+            imageView.animation = fadeIn
+            val hud = KProgressHUD.create(this@Home)
+                .setCustomView(imageView)
+                .setLabel(message ?: getString(R.string.download_doc))
+                .show()
+            Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+        }
+
+        */
+    }
+
+    private fun alertSubDialog(title: String?, message: String) {
+        val builder = AlertDialog.Builder(this, R.style.MyDialogTheme)
+        builder.setTitle(title)
+        val foregroundColorSpan = ForegroundColorSpan(ContextCompat.getColor(this, R.color.white30))
+        val ssBuilder = SpannableStringBuilder(message)
+        ssBuilder.setSpan(
+            foregroundColorSpan,
+            0,
+            message.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        builder.setMessage(ssBuilder)
+        builder.setPositiveButton(resources.getString(R.string.gotit)) { dialog, _ -> dialog.dismiss() }
+        val alert = builder.create()
+        alert.setCanceledOnTouchOutside(false)
+        try {
+            alert.show()
+            alert.getButton(DialogInterface.BUTTON_POSITIVE).textSize = 16f
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun handleUpdateEvent() {
+        messageEvent.observe(this@Home, androidx.lifecycle.Observer {
+            when (it) {
+                Constant.MessageEvent.Default -> {}
+                Constant.MessageEvent.DocDeleted -> {
+                    messageEvent.postValue(Constant.MessageEvent.Default)
+
+                    val imageView = ImageView(this@Home)
+                    imageView.setBackgroundResource(R.drawable.ic_right)
+                    val fadeIn = AlphaAnimation(0f, 1f)
+                    fadeIn.interpolator = DecelerateInterpolator() //add this
+                    fadeIn.duration = 1000
+                    imageView.animation = fadeIn
+                    val hud = KProgressHUD.create(this@Home)
+                        .setCustomView(imageView)
+                        .setLabel(this@Home?.getString(R.string.success_delete))
+                        .setDetailsLabel(this@Home?.getString(R.string.blank))
+                        .show()
+                    Handler(Looper.getMainLooper()).postDelayed({ hud?.dismiss() }, 2000)
+                    HomeFragment.fragment?.hideUploadStatus()
+
+                }
+            }
+        })
+    }
+
+    private fun scheduleJob() {
+        /*val workRequest = OneTimeWorkRequest.Builder(NetworkSchedulerWorker::class.java).build()
+        WorkManager.getInstance(this).enqueue(workRequest)*/
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (toolbar!!.title.toString().equals("", ignoreCase = true)) {
+                if (drawer!!.isDrawerOpen(GravityCompat.START)) {
+                    drawer!!.closeDrawer(GravityCompat.START)
+                } else if (!RecentListAdapter.isInEditMode) {
+                    if (AppPrefs.tabPosition == 0) {
+                        if (exit) {
+                            finish()
+                        } else {
+                            Toast.makeText(
+                                applicationContext,
+                                resources.getString(R.string.exit),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            exit = true
+                            Handler(Looper.getMainLooper()).postDelayed(
+                                { exit = false },
+                                (3 * 1000).toLong()
+                            )
+                        }
+                    } else {
+                        HomeFragment.fragment?.mViewPager?.currentItem = 0
+                    }
+                }
+            } else {
+                if (drawer!!.isDrawerOpen(GravityCompat.START)) {
+                    drawer!!.closeDrawer(GravityCompat.START)
+                } else {
+                    if (!isSignatureEdit) {
+                        checkfrom_topfragment(false)
+                        val fragmentManager = supportFragmentManager
+                        fragmentManager.popBackStackImmediate(
+                            null,
+                            FragmentManager.POP_BACK_STACK_INCLUSIVE
+                        )
+                        fragmentManager.beginTransaction()
+                            .add(
+                                R.id.main_container, HomeFragment.newInstance(
+                                    "",
+                                    receiverEmailFromLink = receiverEmailFromLink
+                                )
+                            )
+                            .addToBackStack(null)
+                            .commit()
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    override fun isNotify(isNotify: Boolean) {
+        // HomeFragment.animation(isNotify)
+    }
+
+    private fun logoutUser() {
+        val url = ReleaseConstant.MainUrl_v2 + ReleaseConstant.logout
+        val param = HashMap<String, String>()
+        param["device_token"] = AppPrefs.PushToken
+        AppPrefs.isLogoutApicalling = true
+        requestListener!!.makeRequestWithHeader(Constant.Post, url, param, 105)
+    }
+
+    private fun callGetCredit() {
+        val url = ReleaseConstant.MainUrl_v2 + ReleaseConstant.getCredit
+        val param = HashMap<String, String>()
+        param["send_campaign_data"] = Constant.referrer
+        param["time_zone"] = TimeZone.getDefault().id
+        param["device_token"] = AppPrefs.PushToken
+        if (sp!!.getBoolean("isLogin", false)) {
+            param["token_id"] = AppPrefs.tokenId
+            param["email"] = AppPrefs.userEmailAddress// android 5 Constant.userEmailAddress
+            param["loginType"] = AppPrefs.loginType
+            if (AppPrefs.loginType == "google") {
+                param["firstName"] = AppPrefs.firstName
+                param["lastName"] = AppPrefs.lastName
+            }
+        } else {
+            param["token_id"] = ""
+        }
+        Log.e("INSIDE", "callGetCredit (_)" + AppPrefs.isSubscribed)
+
+        requestListener!!.makeRequestWithHeader(Constant.Post, url, param, 101)
+    }
+
+    private fun getCreditList() {
+        val url = ReleaseConstant.MainUrl_v4 + ReleaseConstant.creditList
+        val param = HashMap<String, String>()
+        param["variant"] = "I"
+        requestListener!!.makeRequestWithHeader(Constant.Post, url, param, 102)
+    }
+
+    private fun callDownloadSignatureApi() {
+        val url = ReleaseConstant.MainUrl_v4 + ReleaseConstant.getSignature
+        val params1: MutableMap<String, String> = HashMap()
+        params1["user_id"] = AppPrefs.GUID
+        val requestListener = RequestListener(this)
+        requestListener.setApiTaskListener { response, int_task_type ->
+            if (response.equals("error", ignoreCase = true)) {
+                Utils.showinterneterror(this)
+            } else {
+                var J: JSONObject? = null
+                try {
+                    J = JSONObject(response)
+                    val status = J.getInt("status")
+                    if (status == 1) {
+//                        var  isLastItem = false
+//                        var totalDownloadItem = 0
+//                        var downloadedCount = 0
+                        val jsonArray = J.getJSONArray("data")
+                        val webSignList = mutableListOf<String>()
+                        if (jsonArray.length() > 0) {
+                            for (i in 0 until jsonArray.length()) {
+                                val jsonObject = jsonArray.getJSONObject(i)
+                                val id = jsonObject.getInt("id")
+                                val name = jsonObject.getString("name")
+                                webSignList.add(name)
+                            }
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                //remove existing unused sign file in the path
+                                val signDirectory = File(Constant.sign_path)
+                                val fileNameInList = webSignList.map { it.substringBeforeLast(".") }
+                                if (signDirectory.exists() && signDirectory.isDirectory) {
+                                    val signFiles = signDirectory.listFiles()
+                                    signFiles?.forEach { file ->
+                                        val fileNameWithoutExtension = file.nameWithoutExtension
+
+                                        if (!fileNameInList.contains(fileNameWithoutExtension)) {
+                                            file.delete()
+                                        }
+                                    }
+                                }
+
+
+                                for (i in 0 until jsonArray.length()) {
+                                    val item = jsonArray.getJSONObject(i)
+                                    val name = item.getString("name")
+                                    val isTxtFile = name.contains(".txt")
+                                    val file = File(Constant.sign_path + name)
+                                    var signAvailableInLocal = false
+                                    if (!isTxtFile && file.exists()) {
+                                        signAvailableInLocal = true
+                                    } else if (File(
+                                            Constant.sign_path + name.replace(
+                                                ".txt",
+                                                ".png"
+                                            )
+                                        ).exists()
+                                    ) {
+                                        signAvailableInLocal = true
+                                    }
+                                    if (!signAvailableInLocal) {
+                                        val inputData = Data.Builder()
+                                            .putString(DownloadServerSign.SIGN_NAME, name)
+                                            .build()
+
+                                        val constraints = Constraints.Builder()
+                                            .setRequiredNetworkType(NetworkType.CONNECTED)
+                                            .build()
+
+                                        val downloadWorkRequest =
+                                            OneTimeWorkRequestBuilder<DownloadServerSign>()
+                                                .setConstraints(constraints)
+                                                .setInputData(inputData)
+                                                .build()
+
+                                        val wormnager = WorkManager.getInstance(this@Home)
+                                        wormnager.enqueue(downloadWorkRequest)
+                                        lifecycleScope.launch(Dispatchers.Main) {
+                                            val workInfoLiveData =
+                                                wormnager.getWorkInfoByIdLiveData(
+                                                    downloadWorkRequest.id
+                                                )
+                                            workInfoLiveData.observe(this@Home) { workInfo ->
+
+                                                workInfo?.let {
+                                                    when (it.state) {
+                                                        WorkInfo.State.SUCCEEDED -> {
+                                                            ApiConst.updateStep("UpoladoingFiel=Sucess")
+                                                            // Work completed successfully
+
+                                                            ApiConst.updateStep("SUCCEEDED")
+                                                            // Access results from outputData
+                                                        }
+
+                                                        WorkInfo.State.FAILED -> {
+                                                            // Work failed
+                                                            // Handle failure
+                                                        }
+
+                                                        WorkInfo.State.ENQUEUED -> {
+                                                            // Work is enqueued and waiting to run
+                                                            ApiConst.updateStep("ENQUEUED")
+                                                        }
+
+                                                        WorkInfo.State.RUNNING -> {
+                                                            // Work is currently running
+                                                            ApiConst.updateStep("RUNNING")
+                                                        }
+
+                                                        WorkInfo.State.CANCELLED -> {
+                                                            // Work was cancelled
+                                                            ApiConst.updateStep("CANCELLED")
+                                                        }
+
+                                                        WorkInfo.State.BLOCKED -> {
+                                                            // Work is blocked due to constraints
+                                                            ApiConst.updateStep("BLOCKED")
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                    } else {
+                        val messageObject = J.getJSONObject("message")
+                        val desc = messageObject.getString("desc")
+                        val title = messageObject.getString("title")
+                        Log.e(TAG, "Sign Response Err : $title,$desc")
+                    }
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        requestListener.makeRequestWithHeader(
+            Constant.Post,
+            url,
+            params1,
+            -1
+        )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Constant.ROOT = filesDir.absolutePath
+//        callDownloadSignatureApi()
+        Constant.update()
+        checkFreeTrial()
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .registerOnSharedPreferenceChangeListener(this)
+//  here the success msg will be show when doc open from pn
+        if (Constant.isSendFaxExport) {
+            DirectExportActivity.uploading.postValue(false)
+            Constant.isSendFaxExport = false
+            val imageView = ImageView(this)
+            imageView.setBackgroundResource(R.drawable.ic_right)
+            val fadeIn = AlphaAnimation(0f, 1f)
+            fadeIn.interpolator = DecelerateInterpolator() //add this
+            fadeIn.duration = 1000
+            imageView.animation = fadeIn
+            lifecycleScope.launch(Dispatchers.IO) {
+                withContext(Dispatchers.Main) {
+                    val hud = KProgressHUD.create(this@Home)
+                        .setCustomView(imageView)
+                        .setLabel(getString(R.string.doc_export_success))
+                        .show()
+                    delay(2000)
+                    hud.dismiss()
+                }
+            }
+        }
+        if (AppPrefs.isSignadded) {
+            DirectExportActivity.uploading.postValue(false)
+            AppPrefs.isSignadded = false
+            val imageView = ImageView(this)
+            imageView.setBackgroundResource(R.drawable.ic_right)
+            val fadeIn = AlphaAnimation(0f, 1f)
+            fadeIn.interpolator = DecelerateInterpolator() //add this
+            fadeIn.duration = 1000
+            imageView.animation = fadeIn
+            lifecycleScope.launch(Dispatchers.IO) {
+                withContext(Dispatchers.Main) {
+                    val hud = KProgressHUD.create(this@Home)
+                        .setCustomView(imageView)
+                        .setLabel(getString(R.string.sign_successfully))
+                        .show()
+                    delay(2000)
+                    hud.dismiss()
+                }
+            }
+        }
+    }
+
+    private fun fetchLocalData() {
+        AppPrefs.secure_id= Settings.Secure.getString(this.contentResolver, Settings.Secure.ANDROID_ID) //"Android5_1112202401"//
+        sp = PreferenceManager.getDefaultSharedPreferences(this)
+        Log.e("secure_id", "AppPrefs.userEmailAddress ${AppPrefs.userEmailAddress}")
+        Constant.orderofcategory = Utils.getCategoryPref(this)
+        Constant.manageDetailList = Utils.getSavedHashMap("categoryManageList", this)
+        // android 5 Constant.userEmailAddress = sp?.getString("Email", "") ?: ""
+        AppPrefs.loginType = sp?.getString("loginType", "") ?: ""
+        AppPrefs.isLogin = sp?.getBoolean("isLogin", false) ?: false
+        AppPrefs.GUID = sp?.getString("user_id", "") ?: ""
+        if (AppPrefs.GUID.equals("", ignoreCase = true)) AppPrefs.GUID = AppPrefs.secure_id
+        AppPrefs.tokenId = sp?.getString("token_id", "") ?: ""
+        AppPrefs.UserCredits = sp?.getString("user_credits", "0") ?: ""
+        Constant.selectedCategory = sp?.getString("select_category", "Other") ?: ""
+        AppPrefs.PushToken = sp?.getString("token", "") ?: ""
+
+        AppPrefs.isSubscribed = sp?.getString("isSubscribed", "0") ?: "0"
+        AppPrefs.isFreeTrialUsed = sp?.getString("isFreeTrialUsed", "0") ?: "0"
+        AppPrefs.purchaseStatus = sp?.getString("purchaseStatus", "") ?: ""
+        AppPrefs.totalDocs = sp?.getInt("totalDocs", 0) ?: 0
+        AppPrefs.isFreeTrialMode = sp?.getInt("isFreeTrialMode", 0) ?: 0
+        AppPrefs.isTrialExpired = sp?.getInt("isTrialExpired", 0) ?: 0
+
+        val e = sp?.edit()
+        e?.putString("user_id", AppPrefs.GUID)
+        e?.commit()
+        AppPrefs.isTimeUpdate = false
+        AppPrefs.isLoginReqSign = false
+    }
+
+    private fun checkFreeTrial() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            CommonAPI.freeTrialDocCount(this@Home, callback = { response ->
+                Log.e(TAG, "checkFreeTrial:" + response.toString())
+
+                response.onEach {
+                    when (it) {
+                        is CommonResponse.Success -> {
+                            Log.e(TAG, "checkFreeTrial: success  " + it.toString())
+                            AppPrefs.totalDocs = it.data?.totalCount ?: 0
+                            AppPrefs.isFreeTrialMode = it.data?.isFreeTrialMode ?: 0
+                            AppPrefs.isTrialExpired = it.data?.isTrialExpired ?: 0
+                            if (AppPrefs.isFreeTrialMode == 1) {
+                                //free trial mode is active show upgarde option
+                                layFreeTrial?.visible()
+
+
+                                val percent: Int =
+                                    if (AppPrefs.totalDocs > 3) 3 else AppPrefs.totalDocs
+                                Log.e(
+                                    TAG,
+                                    "checkFreeTrial: $percent" + "  AppPrefs.totalDocs = " + AppPrefs.totalDocs
+                                )
+                                Log.e(
+                                    TAG,
+                                    "checkFreeTrial: $percent" + "  AppPrefs.totalDocs = " + AppPrefs.totalDocs
+                                )
+
+
+                                val remainingDoc = Constant.maxFreeDocs - percent ?: 0
+                                doc_prgress?.progress = percent
+                                if (remainingDoc > 0) {
+
+                                    if (remainingDoc > 1) {
+                                        tv_remainDoc?.text =
+                                            remainingDoc.toString() + " " + getString(R.string.remaining_documents)
+                                    } else {
+                                        tv_remainDoc?.text =
+                                            remainingDoc.toString() + " " + getString(R.string.rm_docs)
+                                    }
+
+                                    tv_remainDoc?.setTextColor(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.unselected_text_color
+                                        )
+                                    )
+                                    // Set the progress bar's progress color.
+                                    doc_prgress?.progressDrawable?.setColorFilter(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.colorAccent
+                                        ), PorterDuff.Mode.SRC_IN
+                                    )
+                                    doc_prgress?.indeterminateDrawable?.setColorFilter(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.colorAccent
+                                        ), PorterDuff.Mode.SRC_IN
+                                    )
+                                } else {
+                                    tv_remainDoc?.text = getString(R.string.limit_reached)
+                                    tv_remainDoc?.setTextColor(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.red
+                                        )
+                                    )
+                                    // Set the progress bar's progress color.
+                                    doc_prgress?.progressDrawable?.setColorFilter(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.red
+                                        ), PorterDuff.Mode.SRC_IN
+                                    )
+                                    doc_prgress?.indeterminateDrawable?.setColorFilter(
+                                        ContextCompat.getColor(
+                                            this@Home,
+                                            R.color.red
+                                        ), PorterDuff.Mode.SRC_IN
+                                    )
+                                }
+
+                            } else {
+                                //hide gbgggggggg
+                                layFreeTrial?.gone()
+                                divider_f?.gone()
+                            }
+                            val isShow =
+                                cvEmailVerification!!.visibility == View.VISIBLE || cvTryFillUnlimited!!.visibility == View.VISIBLE
+                            divider_f.visibleIf(isShow)
+                            if (!isShow && !divider!!.isVisible && layFreeTrial!!.isVisible) {
+                                divider?.visible()
+                            }
+                            commonFunction!!.scheduleOrCancelAlarms(this@Home, sp)
+
+                            FillDrawer()
+
+
+                        }
+
+                        is CommonResponse.Error -> {
+                            //hide
+                            Log.e(TAG, "checkFreeTrial: Error  " + it.toString())
+                            lifecycleScope.launch(Dispatchers.Main) {
+                                delay(400)
+                                layFreeTrial?.gone()
+                                divider_f?.gone()
+                                val isShow =
+                                    cvEmailVerification!!.visibility == View.VISIBLE || cvTryFillUnlimited!!.visibility == View.VISIBLE
+                                // divider_f.visibleIf(isShow)
+                                if (!isShow && !divider!!.isVisible && layFreeTrial!!.isVisible) {
+                                    divider?.visible()
+                                }
+
+                            }
+                        }
+
+                        is CommonResponse.Loading -> {
+                            Log.e(TAG, "checkFreeTrial: Loading" + it.toString())
+
+                        }
+                    }
+                }.launchIn(lifecycleScope)
+            })
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Unregister the listener whenever a key changes
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .unregisterOnSharedPreferenceChangeListener(this);
+    }
+
+    private fun call_force_update() {
+        val url = ReleaseConstant.MainUrl_v2 + ReleaseConstant.force_update
+        requestListener!!.makeRequestWithHeaderOnly(Constant.Post, url, 103)
+    }
+
+    private fun gaTracking() {
+        val url = ReleaseConstant.MainUrl_v4 + ReleaseConstant.ga_tracking
+        requestListener!!.makeRequestWithHeaderOnly(Constant.Post, url, 2525)
+    }
+
+    private fun updateGaTracking() {
+        val url = ReleaseConstant.MainUrl_v4 + ReleaseConstant.update_ga_tracking
+        requestListener!!.makeRequestWithHeaderOnly(Constant.Post, url, 2526)
+    }
+
+    private var lastTimeSyncFile = 0L
+    private val mEmailVerificationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+
+            if (intent?.action == Constant.INTENT_ACTION_EMAIL_VERIFICATION) {
+                AppPrefs.isEmailVerified = 1
+                FillDrawer()
+            }
+            if (intent?.action == Constant.INTENT_ACTION_RECEIVER_FINISH_PROCESS) {
+                val message = getString(R.string.sign_successfully)
+
+                val imageView = ImageView(this@Home)
+                imageView.setBackgroundResource(R.drawable.ic_right)
+                val fadeIn = AlphaAnimation(0f, 1f)
+                fadeIn.interpolator = DecelerateInterpolator() //add this
+                fadeIn.duration = 1000
+                imageView.animation = fadeIn
+                val hud = KProgressHUD.create(this@Home)
+                    .setCustomView(imageView)
+                    .setLabel(message ?: getString(R.string.document_sent))
+                    .show()
+                Handler(Looper.getMainLooper()).postDelayed({ hud.dismiss() }, 2000)
+            }
+            if (intent?.action == Constant.INTENT_ACTION_PAYWALL_CLICK) {
+                Log.e("in", "banner click")
+                if (SystemClock.elapsedRealtime() - lastTimeSyncFile < 1000) {
+                    return
+                }
+                lastTimeSyncFile = SystemClock.elapsedRealtime()
+
+//                val intent = Intent(this@Home, OnBoardingPurchaseScreen::class.java)
+//                startActivityForResult(intent, 123)
+                purchaseLauncher.launch(Intent(this@Home, OnBoardingPurchaseScreen::class.java))
+                overridePendingTransition(R.anim.rtf, R.anim.left_to_right)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(mEmailVerificationReceiver)
+    }
+
+    override fun onNetworkConnectionChanged(isConnected: Boolean) {
+        if (isConnected) {
+            if (subscriptions.isEmpty()) {
+                scheduleJob()
+            }
+        }
+    }
+
+    companion object {
+        var overlay: RelativeLayout? = null
+        @SuppressLint("StaticFieldLeak")
+        var toolbar: Toolbar? = null
+
+        @SuppressLint("StaticFieldLeak")
+        var drawer: DrawerLayout? = null
+        var toggle: ActionBarDrawerToggle? = null
+        var isTablet = false
+        var messageEvent = MutableLiveData<Constant.MessageEvent>(Constant.MessageEvent.Default)
+
+        @JvmStatic
+        fun settitle(title: String, context: Context? = null) {
+
+            if (title.equals("Activity", ignoreCase = true)) {
+                toolbar?.setLogo(R.mipmap.toolbarlogo)
+                toolbar?.title = ""
+            } else {
+                toolbar?.logo = null
+                toolbar?.title = title
+            }
+        }
+
+        @JvmStatic
+        fun settitleForMydetails(title: String, context: Context? = null) {
+
+            if (title.equals("Activity", ignoreCase = true)) {
+                toolbar?.setLogo(R.mipmap.toolbarlogo)
+                toolbar?.title = ""
+            } else {
+                toolbar?.logo = null
+                toolbar?.title = title
+                //toolbar?.setTitleTextAppearance(context,R.style.test)
+            }
+        }
+
+        fun logic_rotate(lock: Boolean) {
+            val anim: ValueAnimator = if (lock) {
+                drawer!!.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
+                ValueAnimator.ofFloat(0f, 1f)
+            } else {
+                drawer!!.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED)
+                ValueAnimator.ofFloat(1f, 0f)
+            }
+            anim.addUpdateListener { valueAnimator ->
+                val slideOffset = valueAnimator.animatedValue as Float
+                toggle!!.onDrawerSlide(drawer!!, slideOffset)
+            }
+            anim.duration = 300
+            anim.start()
+        }
+    }
+
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
+        Log.e(TAG, "PREFRENCE CHANGE  >" + key.toString())
+
+        if (key == "isNetworkCall") {
+            val netCall = sharedPreferences?.getBoolean("isNetworkCall", false)
+            if (netCall == true) {
+                val e1 = sp?.edit()
+                e1?.putBoolean("isNetworkCall", false)
+                e1?.apply()
+
+                /*lifecycleScope.launch(Dispatchers.Main){
+
+                    AllFragment.instance?.showBaner()
+                    DoneFragment.instanceDone?.showBaner()
+                    RecentFragment.instanceRecent?.showBaner()
+                    ExportedFragment.instanceExport?.showBaner()
+                }*/
+
+
+                FillDrawer()
+            }
+        }
+    }
+}
