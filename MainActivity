@@ -1,0 +1,258 @@
+package com.example.cashmachine
+
+import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+import com.example.cashmachine.databinding.ActivityMainBinding
+import com.google.firebase.firestore.FirebaseFirestore
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        enableEdgeToEdge()
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+        binding.layoutCredit.setOnClickListener { setSelectedTab(1) }
+        binding.layoutHistory.setOnClickListener { setSelectedTab(2) }
+        binding.layoutSummary.setOnClickListener { setSelectedTab(3) }
+
+        // Default selected tab
+        createSummaryIfNotExists()
+        setSelectedTab(1)
+    }
+    private fun createSummaryIfNotExists() {
+        val db = FirebaseFirestore.getInstance()
+        val summaryRef = db.collection("denominations").document("summary")
+
+        summaryRef.get().addOnSuccessListener { doc ->
+            if (!doc.exists()) {
+                val initial = hashMapOf(
+                    "500" to 0L,
+                    "200" to 0L,
+                    "100" to 0L,
+                    "50"  to 0L,
+                    "20"  to 0L,
+                    "10"  to 0L,
+                    "total" to 0L
+                )
+                summaryRef.set(initial)
+            }
+        }
+    }
+
+    private fun setSelectedTab(position: Int) {
+        binding.layoutCredit.isSelected = position == 1
+        binding.layoutHistory.isSelected = position == 2
+        binding.layoutSummary.isSelected = position == 3
+
+
+        when (position) {
+            1 ->{
+                binding.textViewCredit.isSelected = true
+                binding.imageCredit.isSelected = true
+                binding.textViewCredit.setTextColor(ContextCompat.getColor(this,R.color.black))
+                binding.imageCredit.imageTintList = ContextCompat.getColorStateList(this, R.color.black)
+                binding.textViewHistory.isSelected = false
+                binding.textViewSummary.isSelected = false
+                binding.imageHistory.isSelected = false
+                binding.imageSummary.isSelected = false
+
+                binding.textViewHistory.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+                binding.textViewSummary.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+
+                binding.imageHistory.imageTintList = ContextCompat.getColorStateList(this, R.color.unselected)
+                binding.imageSummary.imageTintList = ContextCompat.getColorStateList(this, R.color.unselected)
+
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.fragmentContainer, CreditFragment())
+                    .commit()
+
+            }
+
+            2 -> {
+                binding.textViewHistory.isSelected = true
+                binding.imageHistory.isSelected = true
+                binding.textViewHistory.setTextColor(ContextCompat.getColor(this, R.color.black))
+                binding.imageHistory.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.black)
+                binding.textViewCredit.isSelected = false
+                binding.textViewSummary.isSelected = false
+                binding.imageCredit.isSelected = false
+                binding.imageSummary.isSelected = false
+                binding.textViewCredit.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+                binding.textViewSummary.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+
+
+                binding.imageCredit.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.unselected)
+                binding.imageSummary.imageTintList =
+                    ContextCompat.getColorStateList(this, R.color.unselected)
+
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.fragmentContainer, HistoryFragment())
+                    .commit()
+            }
+
+            3 -> {
+                binding.textViewSummary.isSelected = true
+                binding.imageSummary.isSelected = true
+                binding.textViewSummary.setTextColor(ContextCompat.getColor(this,R.color.black))
+                binding.imageSummary.imageTintList = ContextCompat.getColorStateList(this, R.color.black)
+                binding.textViewCredit.isSelected = false
+                binding.textViewHistory.isSelected = false
+                binding.imageCredit.isSelected = false
+                binding.imageHistory.isSelected = false
+
+                binding.textViewCredit.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+                binding.textViewHistory.setTextColor(ContextCompat.getColor(this, R.color.unselected))
+
+                binding.imageCredit.imageTintList = ContextCompat.getColorStateList(this, R.color.unselected)
+                binding.imageHistory.imageTintList = ContextCompat.getColorStateList(this, R.color.unselected)
+
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.fragmentContainer, SummaryFragment())
+                    .commit()
+            }
+        }
+    }
+}<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/textViewTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="@string/app_name"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+
+    <FrameLayout
+        android:id="@+id/fragmentContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@id/layoutBottom"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/textViewTitle" />
+
+    <LinearLayout
+        android:id="@+id/layoutBottom"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bottom_bg"
+        android:orientation="horizontal"
+        android:padding="15dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <LinearLayout
+            android:id="@+id/layoutCredit"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/imageCredit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/nav_icon_tint"
+                android:contentDescription="@string/cd_credit"
+                android:src="@drawable/ic_credit" />
+
+            <TextView
+                android:id="@+id/textViewCredit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="@string/credit_debit"
+                android:textColor="@color/nav_text_color"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layoutHistory"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/imageHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/nav_icon_tint"
+                android:contentDescription="@string/history"
+                android:src="@drawable/ic_history" />
+
+            <TextView
+                android:id="@+id/textViewHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="@string/history"
+                android:textColor="@color/nav_text_color"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layoutSummary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/imageSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/nav_icon_tint"
+                android:contentDescription="@string/history"
+                android:src="@drawable/ic_summary" />
+
+            <TextView
+                android:id="@+id/textViewSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="@string/summary"
+                android:textColor="@color/nav_text_color"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
