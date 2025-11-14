@@ -1,0 +1,232 @@
+package com.example.cashmachine
+
+import android.os.Bundle
+import androidx.fragment.app.Fragment
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import com.example.cashmachine.databinding.FragmentSummaryBinding
+import com.example.cashmachine.databinding.ItemSummaryRowBinding
+import com.google.firebase.firestore.FirebaseFirestore
+
+
+class SummaryFragment : Fragment() {
+    private lateinit var binding: FragmentSummaryBinding
+    private val db = FirebaseFirestore.getInstance()
+
+    private val denominations = listOf(500, 200, 100, 50, 20, 10)
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+       binding = FragmentSummaryBinding.inflate(inflater, container, false)
+        return binding.root
+
+    }
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        loadSummary()
+    }
+
+    private fun loadSummary() {
+        db.collection("denominations")
+            .document("summary")
+            .get()
+            .addOnSuccessListener { snapshot ->
+
+                var totalBalance = 0L
+
+                // 500
+                val cnt500 = snapshot.getLong("500") ?: 0L
+                binding.item500.tvDenominationValue.text = "₹500"
+                binding.item500.tvCount.text = cnt500.toString()
+                binding.item500.tvSubtotal.text = "₹${cnt500 * 500}"
+                totalBalance += cnt500 * 500
+
+                // 200
+                val cnt200 = snapshot.getLong("200") ?: 0L
+                binding.item200.tvDenominationValue.text = "₹200"
+                binding.item200.tvCount.text = cnt200.toString()
+                binding.item200.tvSubtotal.text = "₹${cnt200 * 200}"
+                totalBalance += cnt200 * 200
+
+                // 100
+                val cnt100 = snapshot.getLong("100") ?: 0L
+                binding.item100.tvDenominationValue.text = "₹100"
+                binding.item100.tvCount.text = cnt100.toString()
+                binding.item100.tvSubtotal.text = "₹${cnt100 * 100}"
+                totalBalance += cnt100 * 100
+
+                // 50
+                val cnt50 = snapshot.getLong("50") ?: 0L
+                binding.item50.tvDenominationValue.text = "₹50"
+                binding.item50.tvCount.text = cnt50.toString()
+                binding.item50.tvSubtotal.text = "₹${cnt50 * 50}"
+                totalBalance += cnt50 * 50
+
+                // 20
+                val cnt20 = snapshot.getLong("20") ?: 0L
+                binding.item20.tvDenominationValue.text = "₹20"
+                binding.item20.tvCount.text = cnt20.toString()
+                binding.item20.tvSubtotal.text = "₹${cnt20 * 20}"
+                totalBalance += cnt20 * 20
+
+                // 10
+                val cnt10 = snapshot.getLong("10") ?: 0L
+                binding.item10.tvDenominationValue.text = "₹10"
+                binding.item10.tvCount.text = cnt10.toString()
+                binding.item10.tvSubtotal.text = "₹${cnt10 * 10}"
+                totalBalance += cnt10 * 10
+
+                binding.tvTotalBalance.text = "₹$totalBalance"
+            }
+            .addOnFailureListener {
+                // optional: show error state
+                binding.tvTotalBalance.text = "₹0"
+            }
+    }
+
+
+}
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:fillViewport="true"
+    android:background="@color/white"
+    tools:context=".SummaryFragment">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cash_summary"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Denomination Rows -->
+        <LinearLayout
+            android:id="@+id/layoutDenominations"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- 500 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item500" />
+
+            <!-- 200 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item200" />
+
+            <!-- 100 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item100" />
+
+            <!-- 50 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item50" />
+
+            <!-- 20 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item20" />
+
+            <!-- 10 -->
+            <include layout="@layout/item_summary_row"
+                android:id="@+id/item10" />
+
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Total Balance -->
+        <LinearLayout
+            android:id="@+id/layoutTotalContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/textViewTotalLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/total_balance"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+
+            <TextView
+                android:id="@+id/tvTotalBalance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="₹0"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/black" />
+        </LinearLayout>
+    </LinearLayout>
+
+
+</ScrollView>
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <TextView
+        android:id="@+id/tvDenominationValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="₹500"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@color/black"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        />
+
+    <!-- Count -->
+    <TextView
+        android:id="@+id/tvCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="-"
+        android:textSize="16sp"
+        app:layout_constraintStart_toEndOf="@id/tvDenominationValue"
+        app:layout_constraintEnd_toStartOf="@id/tvSubtotal"
+        app:layout_constraintTop_toTopOf="parent"
+
+
+         />
+
+    <!-- Subtotal -->
+    <TextView
+        android:id="@+id/tvSubtotal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="₹0"
+        android:textSize="16sp"
+        android:textColor="@color/black"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+
+       />
+</androidx.constraintlayout.widget.ConstraintLayout>
