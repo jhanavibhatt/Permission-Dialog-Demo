@@ -1,0 +1,283 @@
+package com.example.cashmachine
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
+import com.example.cashmachine.databinding.FragmentCreditBinding
+import com.example.cashmachine.utils.Constants
+import com.example.cashmachine.utils.Functions
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import java.util.Date
+
+
+class CreditFragment : Fragment() {
+    private lateinit var binding: FragmentCreditBinding
+    private val db = FirebaseFirestore.getInstance()
+    private var selectedMode = Constants.TYPE_CREDIT
+
+    private val denominations = listOf(500, 200, 100, 50, 20, 10)
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        binding = FragmentCreditBinding.inflate(inflater, container, false)
+        setupUI()
+        return binding.root
+
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+    }
+
+    private fun updateToggleUI() {
+        binding.toggleCredit.isSelected = selectedMode == Constants.TYPE_CREDIT
+        binding.toggleDebit.isSelected = selectedMode == Constants.TYPE_DEBIT
+
+
+        binding.toggleCredit.setTextColor(
+            ContextCompat.getColor(requireContext(),
+                if (selectedMode == Constants.TYPE_CREDIT) R.color.black else R.color.unselected)
+        )
+        binding.toggleDebit.setTextColor(
+            ContextCompat.getColor(requireContext(),
+                if (selectedMode == Constants.TYPE_DEBIT) R.color.black else R.color.unselected)
+        )
+    }
+
+    private fun setupUI() {
+        binding.toggleCredit.isSelected = true
+
+        binding.toggleCredit.setOnClickListener {
+            selectedMode = Constants.TYPE_CREDIT
+            updateToggleUI()
+        }
+        binding.toggleDebit.setOnClickListener {
+            selectedMode = Constants.TYPE_DEBIT
+            updateToggleUI()
+        }
+
+        binding.btnSubmit.setOnClickListener { validateAndSubmit() }
+    }
+    private fun validateAndSubmit() {
+        val amountText = binding.editTextAmount.text.toString()
+
+        if (Functions.isFieldEmpty(amountText)) {
+            Functions.showErrorSnackbar(requireActivity(), binding.root, "Please enter amount")
+            return
+        }
+
+        val amount = amountText.toIntOrNull()
+        if (amount == null || amount <= 0 || amount % 10 != 0) {
+            Functions.showErrorSnackbar(
+                requireActivity(),
+                binding.root,
+                "Amount must be positive and multiple of ₹10"
+            )
+            return
+        }
+
+        if (selectedMode == Constants.TYPE_CREDIT) {
+            distributeAndSave(amount)
+            return
+        }
+
+        validateDebit(amount)
+    }
+    private fun validateDebit(amount: Int) {
+        val summaryRef = db.collection("denominations").document("summary")
+
+        summaryRef.get().addOnSuccessListener { snapshot ->
+
+            val total = snapshot.getLong("total") ?: 0L
+
+            if (total < amount) {
+                Functions.showErrorSnackbar(
+                    requireActivity(),
+                    binding.root,
+                    "Insufficient balance"
+                )
+                return@addOnSuccessListener
+            }
+
+            val required = calculateBreakdown(amount)
+
+            for ((den, countNeeded) in required) {
+                val available = snapshot.getLong(den.toString()) ?: 0L
+                if (countNeeded > available) {
+                    Functions.showErrorSnackbar(
+                        requireActivity(),
+                        binding.root,
+                        "Not enough ₹$den notes available"
+                    )
+                    return@addOnSuccessListener
+                }
+            }
+
+            // All validations passed → perform debit
+            distributeAndSave(amount)
+        }
+    }
+
+    private fun calculateBreakdown(amount: Int): Map<Int, Int> {
+        val result = mutableMapOf<Int, Int>()
+        var remaining = amount
+
+        for (den in denominations) {
+            val count = remaining / den
+            if (count > 0) {
+                result[den] = count
+                remaining %= den
+            }
+        }
+
+        return result
+    }
+
+
+    private fun distributeAndSave(amount: Int) {
+        val denominationsCount = calculateBreakdown(amount)
+
+        val summaryText = denominationsCount.entries.joinToString("\n") {
+            "₹${it.key} × ${it.value}"
+        }
+        binding.textviewSummary.text = summaryText
+
+        val transaction = hashMapOf(
+            Constants.TYPE_KEY to selectedMode,
+            Constants.AMOUNT_KEY to amount,
+            Constants.TIMESTAMP_KEY to Date(),
+            Constants.DENOMINATIONS_KEY to denominationsCount.mapKeys { it.key.toString() }
+        )
+
+        db.collection("transactions").add(transaction)
+            .addOnSuccessListener {
+                if (!isAdded) return@addOnSuccessListener
+
+                updateSummary(denominationsCount, selectedMode)
+
+                Functions.showSuccessSnackbar(
+                    requireActivity(),
+                    binding.root,
+                    "Transaction successful"
+                )
+                binding.editTextAmount.text?.clear()
+            }
+            .addOnFailureListener {
+                if (!isAdded) return@addOnFailureListener
+
+                Functions.showErrorSnackbar(
+                    requireActivity(),
+                    binding.root,
+                    "Transaction failed"
+                )
+            }
+    }
+    private fun updateSummary(distribution: Map<Int, Int>, type: String) {
+
+        val summaryRef = db.collection("denominations").document("summary")
+
+        db.runTransaction { transaction ->
+
+            val snapshot = transaction.get(summaryRef)
+            val updatedMap = mutableMapOf<String, Any>()
+
+            for (den in denominations) {
+                val existing = snapshot.getLong(den.toString()) ?: 0
+                val change = distribution[den] ?: 0
+
+                val newValue =
+                    if (type == Constants.TYPE_CREDIT) existing + change
+                    else existing - change
+
+                updatedMap[den.toString()] = newValue.coerceAtLeast(0)
+            }
+
+            // Calculate total balance
+            val total = denominations.sumOf { den ->
+                (updatedMap[den.toString()] as Long) * den
+            }
+
+            updatedMap["total"] = total
+
+            transaction.set(summaryRef, updatedMap, SetOptions.merge())
+        }
+    }
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="15dp"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    tools:context=".CreditFragment">
+
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/toggleMode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:padding="15dp"
+        android:spacing="20dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:singleSelection="true">
+
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/toggleCredit"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/credit" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/toggleDebit"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/debit" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+    <EditText
+        android:id="@+id/editTextAmount"
+        android:hint="@string/enter_amount"
+        android:inputType="number"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/toggleMode"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginTop="16dp" />
+
+    <Button
+        android:id="@+id/btnSubmit"
+        android:text="@string/submit"
+        app:layout_constraintTop_toBottomOf="@id/editTextAmount"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp" />
+
+    <TextView
+        android:id="@+id/textviewSummary"
+        android:text="@string/total_balance"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginTop="20dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/btnSubmit"
+        app:layout_constraintStart_toStartOf="parent"/>
+</androidx.constraintlayout.widget.ConstraintLayout>
