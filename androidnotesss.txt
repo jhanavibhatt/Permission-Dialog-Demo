@@ -373,3 +373,337 @@ class DownloadFile(
         job.cancel()
         activeConnection?.disconnect()
     }
+
+
+
+===================================================================================================================
+
+import amplify.fill.common.Constant
+import amplify.fill.common.PdfToImage
+import amplify.fill.database.repository.DocumentRepository
+import amplify.fill.model.Document
+import amplify.fill.model.PreSignedUrl
+import amplify.fill.utils.KotlinUtils
+import amplify.fill.utils.Utils
+import android.app.ActivityManager
+import android.content.Context
+import android.content.Context.ACTIVITY_SERVICE
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import java.io.File
+import java.util.Collections
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+class DownloadDocService(private val context: Context, workerParams: WorkerParameters) :
+    CoroutineWorker(context, workerParams) {
+
+    private val documentDao = DocumentRepository(applicationContext)
+
+    /** Rows to persist after PDF/thumbnail work; flushed in one transaction when downloads finish. */
+    private val pendingDocumentUpdates =
+        Collections.synchronizedList(mutableListOf<Document>())
+
+    private lateinit var preSignedUrls: List<PreSignedUrl>
+    private lateinit var documents: List<Document>
+    private lateinit var docKey: String
+
+    // Track the currently active download for cancellation
+    private var currentDownload: DownloadFile? = null
+    private var startTime = System.currentTimeMillis()
+    private val memoryClass = (applicationContext.getSystemService(ACTIVITY_SERVICE) as ActivityManager).memoryClass
+    val permits = when {
+        memoryClass >= 8000 -> 20     // High-end
+        memoryClass >= 4000 -> 15     // Mid-range
+        else -> 15                    // Low-end
+//        else -> 25                    // Low-end
+    }
+    private val downloadSemaphore = Semaphore(permits = permits)
+
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            docKey = inputData.getString("docKey") ?: ""
+            Timber.tag("DownloadDocService").d("Worker was in process.== $isActive  == docKey == $docKey == Is Stopped == $isStopped ")
+            documents = if (docKey.isEmpty()) {
+                documentDao.getAllDocuments()
+            } else {
+                listOfNotNull(documentDao.getDocument(docKey))
+            }
+            val jsonArray = buildJsonArray() // New helper function to keep doWork clean
+            if (!jsonArray.isEmpty) {
+                preSignedUrls = withContext(Dispatchers.IO) {
+                    callPresignUrlApiSuspended(applicationContext, "get", jsonArray)
+                }
+                // 2. Start the main download process, which must also be suspending
+                downloadAllDocumentsConcurrently()
+            }
+
+            // Check if cancellation was the reason for exiting the loop
+            if (isStopped) {
+                Result.failure() // or success, based on your logic
+            } else {
+                Result.success()
+            }
+        } catch (e: Exception) {
+            Timber.tag("DownloadDocService").d("Worker was failed.${e.message}")
+            e.printStackTrace()
+
+            if (e is CancellationException) throw e // Rethrow for clean shutdown
+            Result.retry()
+        }
+    }
+
+    companion object {
+        const val WORKER_TAG = "DownloadDocWorker"
+        const val WORKER_TAG_2 = "DownloadDocWorker_2"
+    }
+
+    private suspend fun buildJsonArray(): JsonArray = withContext(Dispatchers.IO) {
+        val jsonArray = JsonArray()
+        documents.forEach { document ->
+            try {
+                val docFolder = File(document.originPath)
+                if (docKey.isNotEmpty() || (!document.docKey.isNullOrEmpty() && !docFolder.exists())) {
+                    val jsonObject = JsonObject().apply {
+                        addProperty("docKey", document.docKey)
+                        val path = Constant.DOC_PATH_ANNOTATION
+                        add("docPath", JsonArray().apply { add(path) })
+                    }
+                    jsonArray.add(jsonObject)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Timber.tag("DownloadDocService").d("document list .$documents")
+            }
+        }
+        return@withContext jsonArray
+    }
+
+    // A wrapper function, possibly in KotlinUtils or a repository
+    suspend fun callPresignUrlApiSuspended(
+        context: Context,
+        method: String,
+        jsonArray: JsonArray
+    ): List<PreSignedUrl> = suspendCancellableCoroutine { continuation ->
+
+        KotlinUtils.callPresignUrlApi(
+            context, method, jsonArray,
+            { preSignedUrls ->
+                continuation.resume(preSignedUrls)
+            },
+            { err ->
+                continuation.resumeWithException(Exception("Presign URL API failed: $err"))
+            }
+        )
+    }
+
+    private suspend fun downloadSingleDocument(index: Int, preSigned: PreSignedUrl) =
+        suspendCancellableCoroutine { continuation ->
+            val doc = documentDao.getDocument(preSigned.docKey) ?: return@suspendCancellableCoroutine
+
+            val saveFilePath = doc.originPath.ifEmpty { Constant.DownloadPDFPath + preSigned.docKey + Constant.EXTENSION_PDF }
+
+            if (File(doc.originPath).exists() && docKey.isEmpty()) {
+                Timber.tag("DownloadDocService").e("File already exists: $saveFilePath")
+                continuation.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
+
+            // 1. Create the DownloadFile instance with callbacks that resume/throw
+            val downloadFile = DownloadFile(applicationContext, {
+                // Success Callback
+                CoroutineScope(continuation.context).launch(Dispatchers.IO) {
+                    try {
+                        // Blocking DAO call is now safely on Dispatchers.IO
+                        Timber.tag("DownloadDocService")
+                            .e("Success == ${index + 1}/${preSignedUrls.size}  ==   $saveFilePath")
+                        readPdfFile(doc, saveFilePath)
+                        // Only resume the continuation *after* the blocking call completes
+                        continuation.resume(Unit)
+                    } catch (e: Exception) {
+                        // If the database operation fails, signal failure to the outer coroutine
+                        continuation.resumeWithException(Exception("Database update failed: ${e.message}"))
+                    }
+                }
+            }, { err ->
+                Timber.tag("DownloadDocService").e("Error $err")
+                // Throw an exception to the coroutine flow, which will be caught in downloadAllDocuments.
+                continuation.resumeWithException(Exception("Download failed: $err"))
+            })
+
+            // CRITICAL: Store the download instance and link cancellation
+            currentDownload = downloadFile
+
+            // 2. Link Coroutine Cancellation to DownloadFile Cancellation
+            // If the WorkManager job is canceled, this block runs immediately.
+            continuation.invokeOnCancellation {
+                Timber.tag("DownloadDocService").d("Coroutine canceled, stopping DownloadFile.")
+                downloadFile.cancel()
+            }
+
+            // 3. Start the download
+            when {
+//                preSigned.originalUrl.isNotEmpty() -> {
+//                    downloadFile.startDownload(saveFilePath, preSigned.originalUrl)
+//                }
+                preSigned.annotationUrl.isNotEmpty() -> {
+                    downloadFile.startDownload(saveFilePath, preSigned.annotationUrl, preSigned.docKey)
+                }
+
+                else -> {
+                    // No URL, immediately finish this part of the work
+                    continuation.resume(Unit)
+                }
+            }
+        }
+
+    private suspend fun downloadAllDocumentsConcurrently() {
+        try {
+            // Uses coroutineScope to ensure all concurrent downloads complete
+            // before this function returns.
+            coroutineScope {
+                val deferredDownloads = preSignedUrls.mapIndexed { index, preSigned ->
+                    // Launch each download concurrently on the IO dispatcher for network operations.
+                    async(Dispatchers.IO) {
+                        downloadSemaphore.withPermit {
+                            try {
+                                downloadSingleDocument(index, preSigned)
+                                true // Success indicator
+                            } catch (e: Exception) {
+                                Timber.tag("DownloadDocService").e("Download failed for document $index: ${e.message}")
+                                false // Failure indicator
+                            }
+                        }
+
+                    }
+                }
+
+                // Wait for all concurrent downloads to finish.
+                val results = deferredDownloads.awaitAll()
+
+                // Log summary results
+                val successfulCount = results.count { it }
+                val failedCount = results.count { !it }
+                Timber.tag("DownloadDocService").i("Concurrent downloads finished: $successfulCount success, $failedCount failed.")
+                val duration = (System.currentTimeMillis() - startTime) / 1000
+                Timber.tag("DownloadDocService_2").e("Download Completed in ==  ${duration / 60} MIN ${duration % 60} SEC")
+            }
+        } finally {
+            flushPendingDocumentUpdates()
+        }
+    }
+
+    /** Single Room transaction so LiveData emits once for the whole batch. */
+    private suspend fun flushPendingDocumentUpdates() = withContext(Dispatchers.IO) {
+        val batch = synchronized(pendingDocumentUpdates) {
+            val copy = pendingDocumentUpdates.toList()
+            pendingDocumentUpdates.clear()
+            copy
+        }
+        if (batch.isEmpty()) return@withContext
+        val distinct = batch.distinctBy { it.recId ?: 0L }
+        distinct.forEach { documentDao.updateDocument(it) }
+        Timber.tag("DownloadDocService").d("Batch-updated ${distinct.size} document(s) in DB.")
+    }
+
+    private suspend fun readPdfFile(document: Document, filePath: String) {
+        withContext(Dispatchers.Default) {
+            var descriptor: ParcelFileDescriptor? = null
+            var pdfRenderer: PdfRenderer? = null
+            try {
+                descriptor = ParcelFileDescriptor.open(
+                    File(filePath),
+                    ParcelFileDescriptor.MODE_READ_ONLY
+                )
+                pdfRenderer = PdfRenderer(descriptor)
+//              val pageCount = pdfRenderer.pageCount
+//              renderPagesAsync(0, pageCount, filePath, document.recId?:0, pageCount, document, filePath)
+                renderPagesAsync(0, 1, filePath, document.recId ?: 0, 1, document, filePath)
+            } catch (e: Exception) {
+//              deleteFile(document.recId?:0, filePath)
+                e.printStackTrace()
+            } finally {
+                descriptor?.close()
+                pdfRenderer?.close()
+            }
+        }
+    }
+
+    private suspend fun renderPagesAsync(
+        startPage: Int,
+        endPageExclusive: Int,
+        src: String,
+        recId: Long,
+        totalPages: Int,
+        document: Document,
+        filePath: String
+    ) = coroutineScope {
+        // Limit parallelism: 2–4 tasks at a time depending on memory
+        val permits = when {
+            memoryClass >= 8000 -> 6     // High-end
+            memoryClass >= 4000 -> 4     // Mid-range
+            else -> 2                    // Low-end
+        }
+        var res = 0
+        val semaphore = Semaphore(permits = permits)
+
+        (startPage until endPageExclusive).map { page ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    try {
+                        res = PdfToImage(
+                            src = src,
+                            context = context,
+                            null,
+                            page,
+                            recId = recId,
+                            totalPages,
+                            endPageExclusive - 1
+                        ).convertPdfToImage()
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error rendering page $page")
+                    }
+                }
+            }
+        }.awaitAll()
+        if (res == 1) {
+            document.apply {
+                this.docUpdateNow = 0
+                this.isLoaded = 0
+                this.pageCount = totalPages
+                this.originPath = filePath
+            }
+            pendingDocumentUpdates.add(document)
+            Utils.deleteExportedFile(recId)
+            // Persist in [flushPendingDocumentUpdates]; Room LiveData refreshes home lists in one shot.
+        }
+    }
+
+    private suspend fun deleteFile(recId: Long, filePath: String) {
+        withContext(Dispatchers.IO) {
+//            CommonAPI.deleteFile(context, fileId.orEmpty())
+            File(filePath).deleteRecursively()
+            documentDao.deleteDocument(recId)
+            documentDao.deleteAllAnnotations(recId)
+            Utils.deleteLocalFileOfDocument(recId)
+        }
+    }
+
+}
