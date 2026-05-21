@@ -1,0 +1,375 @@
+import amplify.fill.common.Constant
+import amplify.fill.common.ReleaseConstant
+import amplify.fill.network.RetrofitService
+import amplify.fill.utils.KotlinUtils
+import android.content.Context
+import com.moontechnolabs.Common.RetrofitApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
+import timber.log.Timber
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.net.Authenticator
+import java.net.HttpURLConnection
+import java.net.PasswordAuthentication
+import java.net.SocketException
+import java.net.URL
+import kotlin.math.ceil
+import kotlin.math.min
+
+class DownloadFile(
+    private val appContext: Context,
+    private val onSuccessful: ((String) -> Unit)?,
+    private val onFailed: ((String) -> Unit)?
+) {
+    // ⭐ 1. Define a cancellable Job for the scope ⭐
+    private val job = SupervisorJob()
+
+    // Use the Job to define the scope
+    private val downloadScope = CoroutineScope(Dispatchers.IO + job)
+    private var startTime = System.currentTimeMillis()
+
+    // ⭐ 2. Track the active HttpURLConnection for explicit disconnection ⭐
+    private var activeConnection: HttpURLConnection? = null
+
+    private fun tempPathFor(destinationPath: String): String = "$destinationPath.download"
+
+    private fun commitTempFile(tmpFile: File, destinationFile: File): Boolean {
+        if (!tmpFile.exists()) return false
+        destinationFile.parentFile?.mkdirs()
+
+        // Best-effort remove old destination so rename can succeed.
+        if (destinationFile.exists() && !destinationFile.delete()) {
+            Timber.tag("DownloadDocService").w("Unable to delete existing destination: ${destinationFile.absolutePath}")
+        }
+
+        // Prefer rename (same filesystem).
+        if (tmpFile.renameTo(destinationFile)) return destinationFile.exists()
+
+        // Fallback to copy+replace.
+        return try {
+            tmpFile.copyTo(destinationFile, overwrite = true)
+            tmpFile.delete()
+            destinationFile.exists()
+        } catch (e: Exception) {
+            Timber.tag("DownloadDocService").e(e, "Failed to commit temp file to destination")
+            false
+        }
+    }
+
+
+    fun startDownload(saveFilePath: String, downloadUrl: String, dockey: String = "", docName: String = "") {
+        downloadScope.launch {
+            try {
+                val isSuccess = downloadFile(downloadUrl, saveFilePath)
+                withContext(Dispatchers.Main) {
+                    if (job.isActive) { // Check if not canceled
+                        if (isSuccess) {
+                            val duration = System.currentTimeMillis() - startTime
+                            Timber.tag("DownloadDocService_3").d("Download Completed in ${duration / 1000} seconds")
+                            onSuccessful?.invoke(saveFilePath)
+                        } else {
+                            if (dockey.isNotEmpty()) {
+                                Timber.tag("DownloadDocService_3").e("ReTry")
+                                createApi(dockey, Constant.DOC_PATH_ORIGINAL, docName)
+                            } else {
+                                Timber.tag("DownloadDocService_3").e("Error in Download")
+                                onFailed?.invoke("Download failed")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                if (e is CancellationException) throw e // Rethrow for clean shutdown
+
+                if (job.isActive) { // Check if not canceled
+                    onFailed?.invoke(e.localizedMessage ?: "Something went wrong during download")
+                }
+            } finally {
+                activeConnection?.disconnect()
+                activeConnection = null
+            }
+        }
+    }
+
+    private suspend fun ResponseBody.saveFile(destinationPath: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val destinationFile = File(destinationPath)
+            val tmpFile = File(tempPathFor(destinationPath))
+            destinationFile.parentFile?.mkdirs()
+            tmpFile.parentFile?.mkdirs()
+
+            var success = false
+            try {
+                if (tmpFile.exists()) tmpFile.delete()
+
+                tmpFile.outputStream().use { outputStream ->
+                    byteStream().use { inputStream ->
+                        val buffer = ByteArray(32 * 1024) // 32 KB buffer
+                        var bytesRead = 0
+                        val startTime = System.currentTimeMillis()
+
+                        while (isActive && inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                        }
+                        val duration = System.currentTimeMillis() - startTime
+                        if (bytesRead == -1) {
+                            Timber.tag("DownloadDocService_3").d("Upload Completed in ${duration / 1000} seconds")
+                            outputStream.flush()
+                            success = true
+                        } else {
+                            // This case handles a loop break due to premature cancellation/error
+                            Timber.tag("DownloadDocService_3").e("Download aborted before completion.")
+                        }
+                    }
+                }
+                if (success) {
+                    commitTempFile(tmpFile, destinationFile)
+                } else {
+                    tmpFile.delete()
+                    false
+                }
+
+            } catch (e: Exception) {
+                tmpFile.delete()
+                when (e) {
+                    is SocketException if e.message?.contains("connection abort", ignoreCase = true) == true -> {
+                        // This is the OS/client-caused abort. Log it but do not crash the app.
+                        Timber.tag("DownloadDocService_3").e(e, "SocketException (Connection Abort) during download.")
+
+                        // We return false, allowing higher-level code to retry or handle the failure
+                        false
+                    }
+
+                    is CancellationException -> {
+                        // Always re-throw CancellationException to respect coroutine structure
+                        Timber.tag("DownloadDocService_3").w("Download coroutine was cancelled.")
+                        throw e
+                    }
+
+                    else -> {
+                        // Handle all other exceptions (File I/O, general errors)
+                        e.printStackTrace()
+
+                        false
+                    }
+                }
+            }
+        }
+
+    private suspend fun ResponseBody.saveFileParallel(
+        destinationPath: String,
+        downloadUrl: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val destinationFile = File(destinationPath)
+        val tmpFile = File(tempPathFor(destinationPath))
+        try {
+            destinationFile.parentFile?.mkdirs()
+            tmpFile.parentFile?.mkdirs()
+            val contentLength = contentLength().takeIf { it > 0 } ?: return@withContext false
+
+            if (tmpFile.exists()) tmpFile.delete()
+            RandomAccessFile(tmpFile, "rw").use { it.setLength(contentLength) }
+
+            val semaphore = Semaphore(4)
+            val chunkSize = 10 * 1024 * 1024
+            val chunkCount = ceil(contentLength.toDouble() / chunkSize).toInt()
+
+            val allChunksOk = coroutineScope {
+                (0 until chunkCount).map { chunkIndex ->
+                    async {
+                        semaphore.withPermit {
+                            try {
+                                val start = chunkIndex * chunkSize.toLong()
+                                val end = min(start + chunkSize, contentLength) - 1
+
+                                val downloadService: RetrofitService = RetrofitApi.getRetrofit()
+                                val rangeHeader = "bytes=$start-$end"
+                                val response = downloadService.downloadFileWithRange(downloadUrl, rangeHeader)
+
+                                if (response.isSuccessful) {
+                                    response.body()?.byteStream()?.use { input ->
+                                        RandomAccessFile(tmpFile, "rw").use { output ->
+                                            output.seek(start)
+                                            val buffer = ByteArray(128 * 1024)
+                                            var bytesRead: Int
+                                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                                output.write(buffer, 0, bytesRead)
+                                            }
+                                        }
+                                    }
+                                    true
+                                } else {
+                                    Timber.e("Chunk $chunkIndex failed with code ${response.code()}")
+                                    false
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+
+                                if (e is CancellationException) throw e
+                                Timber.e(e, "Chunk $chunkIndex failed")
+                                false
+                            }
+                        }
+                    }
+                }.awaitAll().all { it }
+            }
+
+            if (!allChunksOk) {
+                tmpFile.delete()
+                return@withContext false
+            }
+
+            commitTempFile(tmpFile, destinationFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+
+            if (e is CancellationException) throw e
+            Timber.e(e, "Parallel download failed")
+            tmpFile.delete()
+            false
+        }
+    }
+
+    fun createApi(docKey: String?, docPath: String, docName: String) {
+        docKey ?: return
+        KotlinUtils.callPresignUrlApi(
+            appContext,
+            "get",
+            docKey,
+            docPath,
+            { presignedUrlResponse ->
+
+                presignedUrlResponse.annotationUrl.takeIf { it.isNotEmpty() }?.let { annotationUrl ->
+                    startDownload(
+                        Constant.DownloadPDFPath + docName + Constant.EXTENSION_PDF,
+                        annotationUrl,
+                        docKey,
+                        docName
+                    )
+                    val duration = System.currentTimeMillis() - startTime
+                    Timber.tag("DownloadDocService_3").d("Download Started in ${duration / 1000} seconds")
+//                    downloadFileFromURL(docKey,annotationUrl)
+                }
+
+                presignedUrlResponse.originalUrl.takeIf { it.isNotEmpty() }?.let { originalUrl ->
+                    startDownload(
+                        Constant.DownloadPDFPath + docName + Constant.EXTENSION_PDF,
+                        originalUrl
+                    )
+                }
+            },
+            {
+                onFailed?.invoke("No Internet Found!")
+            }
+        )
+    }
+
+    fun downloadFileFromURL(docKey: String, path: String?) {
+        downloadScope.launch {
+            try {
+                val url = URL(path)
+                Authenticator.setDefault(object : Authenticator() {
+                    override fun getPasswordAuthentication(): PasswordAuthentication {
+                        return PasswordAuthentication(
+                            ReleaseConstant.fillBetaUsername,
+                            ReleaseConstant.fillBetaPassword.toCharArray()
+                        )
+                    }
+                })
+                val ucon = url.openConnection() as HttpURLConnection
+                activeConnection = ucon // Store connection for cancellation
+                ucon.readTimeout = 5000
+                ucon.connectTimeout = 10000
+                val `is` = ucon.inputStream
+                val inStream = BufferedInputStream(`is`, 1024 * 5)
+                val destinationFile = File(Constant.DownloadPDFPath + docKey + Constant.EXTENSION_PDF)
+                val tmpFile = File(tempPathFor(destinationFile.absolutePath))
+                tmpFile.parentFile?.mkdirs()
+                if (tmpFile.exists()) tmpFile.delete()
+
+                val outStream = FileOutputStream(tmpFile)
+                val buff = ByteArray(5 * 1024)
+                var len: Int
+                while (inStream.read(buff).also { len = it } != -1) {
+                    outStream.write(buff, 0, len)
+                }
+                outStream.flush()
+                outStream.close()
+                inStream.close()
+                val duration = System.currentTimeMillis() - startTime
+                Timber.tag("DownloadDocService").d("Download Completed in ${duration / 1000} seconds")
+
+                if (job.isActive) {
+                    if (commitTempFile(tmpFile, destinationFile)) {
+                        onSuccessful?.invoke(destinationFile.absolutePath)
+                    } else {
+                        onFailed?.invoke("Download failed")
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                if (e is CancellationException) throw e
+                if (job.isActive) {
+                    onFailed?.invoke(e.localizedMessage ?: "Download failed via URL connection")
+                }
+            } finally {
+                activeConnection?.disconnect()
+                activeConnection = null
+            }
+        }
+    }
+
+    private suspend fun downloadFile(downloadUrl: String, destinationPath: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val downloadService: RetrofitService = RetrofitApi.getRetrofit()
+            try {
+                val response = downloadService.downloadFileWithDynamicUrlSync(downloadUrl)
+                if (response.isSuccessful) {
+                    val contentLength = response.body()?.contentLength() ?: 0
+                    val duration = System.currentTimeMillis() - startTime
+                    Timber.tag("DownloadDocService_3").d("Download Completed in ${duration / 1000} seconds) with size ${contentLength / 1024} KB")
+
+                    // Check file size to decide on download method
+                    if (contentLength > 1 * 1024 * 1024) { // 1 MB
+                        // Use parallel download for large files
+                        response.body()?.saveFileParallel(destinationPath, downloadUrl) ?: false
+//                        response.body()?.saveFile(destinationPath) ?: false
+                    } else {
+                        // Use a simple, sequential download for small files
+                        response.body()?.saveFile(destinationPath) ?: false
+                    }
+                } else {
+                    false
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+
+                if (e is CancellationException) throw e
+                false
+            }
+        }
+
+    /**
+     * The explicit cancellation function called by the CoroutineWorker.
+     */
+    fun cancel() {
+        job.cancel()
+        activeConnection?.disconnect()
+    }
