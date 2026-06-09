@@ -1,0 +1,497 @@
+1 week plan jetpack compose
+
+Day 1 — Understand Recomposition & State
+
+Theory
+
+Learn:
+
+Composition
+Recomposition
+State
+Remember
+MutableState
+State Hoisting
+Derived State
+Practical Task
+
+Create a Counter Dashboard.
+
+Requirements:
+
+Increment button
+Decrement button
+Reset button
+Display total clicks
+Display "Even" / "Odd"
+
+Use:
+
+remember
+mutableStateOf
+derivedStateOf
+Experiment
+
+Add logs:
+
+Log.d("Compose", "Recomposed")
+
+Observe:
+
+What recomposes?
+How often?
+Learning Outcome
+
+You should be able to answer:
+
+Why does Compose recompose?
+
+-----------------------------------------------------------------------------------
+
+Day 2 — State Hoisting & Screen Architecture
+Theory
+
+Learn:
+
+Stateful composables
+Stateless composables
+Single Source of Truth
+Practical Task
+
+Refactor Day 1.
+
+Bad:
+
+CounterButton()
+
+Good:
+
+CounterContent(
+    count = count,
+    onIncrement = {}
+)
+
+Structure:
+
+ui/
+ ├─ screen/
+ ├─ components/
+ └─ state/
+Learning Outcome
+
+Understand why business logic should not live inside UI components.
+
+----------------------------------------------------------------------------------------
+
+Day 3 — MVVM + ViewModel
+Theory
+
+Learn:
+
+ViewModel
+StateFlow
+UiState pattern
+Practical Task
+
+Build a Notes Screen.
+
+Structure:
+
+data/
+domain/
+presentation/
+
+Create:
+
+data class NotesUiState(
+    val notes: List<Note> = emptyList()
+)
+
+Use:
+
+StateFlow
+collectAsStateWithLifecycle()
+Challenge
+
+Add:
+
+Add note
+Delete note
+
+without storing state in composables.
+
+Learning Outcome
+
+Understand:
+
+UI → ViewModel → StateFlow → UI
+
+-----------------------------------------------------------------------------
+
+Day 4 — Navigation Deep Dive
+Theory
+
+Learn:
+
+NavHost
+Nested Graphs
+Type-safe Navigation
+Back Stack
+Practical Task
+
+Create:
+
+Home
+Search
+Profile
+Settings
+
+using:
+
+sealed class Route
+
+Example:
+
+@Serializable
+data object Home
+Challenge
+
+Pass arguments:
+
+Profile/123
+
+Then migrate to type-safe navigation.
+
+Learning Outcome
+
+Understand how large Compose apps organize navigation.
+
+--------------------------------------------------------------------------------
+
+Day 5 — Side Effects & Lifecycle
+Theory
+
+Learn:
+
+LaunchedEffect
+DisposableEffect
+SideEffect
+produceState
+rememberCoroutineScope
+Practical Task
+
+Build:
+
+Timer Screen
+
+Features:
+
+Start timer
+Pause timer
+Reset timer
+
+Use:
+
+LaunchedEffect
+Experiment
+
+Change:
+
+LaunchedEffect(Unit)
+
+to
+
+LaunchedEffect(timerState)
+
+Observe behavior.
+
+Learning Outcome
+
+Understand when effects restart.
+
+-----------------------------------------------------------------------------------------
+
+
+Day 6 — Custom Layouts & Advanced Compose
+
+Since you've already shown interest in custom layouts, spend a full day here.
+
+Theory
+
+Learn:
+
+Layout
+MeasurePolicy
+Constraints
+Intrinsics
+SubcomposeLayout
+Practical Task
+
+Create:
+
+Pinterest Grid Layout
+
+Like:
+
+□ □
+□
+□ □
+
+using:
+
+Layout()
+
+Not:
+
+LazyVerticalGrid()
+Challenge
+
+Create:
+
+Tag Layout
+
+where items automatically wrap.
+
+Example:
+
+Android Compose
+Jetpack Room
+Navigation
+Learning Outcome
+
+Understand how Compose measures and places children.
+
+
+---------------------------------------------------------------------------------------------
+
+Day 7 — Mini Production App
+
+Build:
+
+Task Manager App
+
+Features:
+
+Screens
+Home
+Task Detail
+Add Task
+Settings
+Architecture
+data/
+domain/
+presentation/
+Requirements
+MVVM
+Room
+Navigation
+StateFlow
+Material 3
+Dark Theme
+Search
+Animation
+Bonus
+
+Implement:
+
+AnimatedVisibility
+
+and
+
+Shared Element Transition
+
+(if using the latest APIs).
+
+
+
+================================================================================
+
+
+
+Daily Code Review Checklist
+
+After every task ask yourself:
+
+State
+Is state hoisted?
+Is state duplicated?
+UI
+Is UI stateless?
+Can it be previewed?
+Architecture
+Is ViewModel doing business logic?
+Is UI only displaying state?
+Performance
+Am I creating objects during recomposition?
+Should I use remember?
+
+
+
+x------------------------------------------------------xxxxxxxx--------------------------------x
+
+
+
+
+15 days plan anroid
+
+Days 1-2: Kotlin Revision
+
+Revise:
+
+Data classes
+Sealed classes
+Object declarations
+Extensions
+Higher-order functions
+Scope functions
+let
+apply
+run
+also
+with
+Coroutines
+
+Practice:
+
+StateFlow
+SharedFlow
+CoroutineScope
+launch
+async
+
+---------------------------------------------
+
+Days 3-4: Android Fundamentals
+
+
+Revise:
+
+Activity Lifecycle
+Fragment Lifecycle
+Intent
+Broadcast Receiver
+Service
+Permissions
+Content Provider
+
+Interview Questions:
+
+Activity vs Fragment
+launchMode
+Process death
+Configuration changes
+
+------------------------------------------------------
+Days 5-6: Architecture
+
+Learn deeply:
+
+MVVM
+Repository Pattern
+Clean Architecture basics
+
+----------------------------------------------------------
+Days 7-10: Jetpack Compose Deep Dive
+
+Day 7
+State Management
+
+remember
+mutableStateOf
+derivedStateOf
+rememberSaveable
+==============================
+Day 8
+
+Compose Layouts
+
+Column
+Row
+Box
+LazyColumn
+LazyVerticalGrid
+
+====================================
+
+Day 9
+
+Navigation
+
+Navigation Compose
+Nested Graphs
+Type-safe Navigation
+
+====================================
+
+Day 10
+
+Advanced Compose
+
+LaunchedEffect
+DisposableEffect
+produceState
+SideEffect
+
+and
+
+Animation
+Custom Layout
+SubcomposeLayout
+---------------------------------------------------------------------
+Days 11-12: Jetpack Libraries
+Revise:
+
+Room
+ DAO
+ Entity
+ Relations
+ Migration
+Hilt
+ Dependency Injection
+ Modules
+ Scopes
+WorkManager
+ OneTimeWorkRequest
+ PeriodicWorkRequest
+DataStore
+ Preferences
+ Proto DataStore
+-------------------------------------------------
+
+Day 13: Networking
+
+Revise:
+
+Retrofit
+OkHttp
+Gson/Kotlin Serialization
+
+Practice:
+
+API → Repository → ViewModel → UI
+
+Handle:
+
+Loading
+Success
+Error
+
+states.
+
+-------------------------------------------
+Day 14: XML Revision
+
+Don't spend much time here.
+
+Revise:
+
+ConstraintLayout
+RecyclerView
+ViewBinding
+Navigation Component
+
+Know:
+
+RecyclerView Adapter
+DiffUtil
+ViewHolder Pattern
